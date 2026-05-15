@@ -85,504 +85,513 @@
   </view>
 </template>
 
-<script>
+<script setup>
+import { ref, getCurrentInstance } from 'vue'
+import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { reverseGeocode } from '../../utils/location.js'
+
+const instance = getCurrentInstance().proxy
 
 const MAX_RECORD_MS = 15000
 const LONG_PRESS_MS = 500
 
-export default {
-  data() {
-    return {
-      flash: 'off',
-      devicePosition: 'back',
-      isRecording: false,
-      watermarkText: '',
-      currentTime: '',
-      currentDate: '',
-      currentWeekday: '',
-      currentLocation: '',
-      showWatermarkModal: false,
-    }
-  },
+// ── 响应式状态 ──
+const flash = ref('off')
+const devicePosition = ref('back')
+const isRecording = ref(false)
+const watermarkText = ref('')
+const currentTime = ref('')
+const currentDate = ref('')
+const currentWeekday = ref('')
+const currentLocation = ref('')
+const showWatermarkModal = ref(false)
 
-  onLoad() {
-    this.ctx = uni.createCameraContext()
-    this._updateTime()
-    this._timer = setInterval(() => {
-      this._updateTime()
-    }, 1000)
-    this._updateLocation()
-    setTimeout(() => {
-      this._initDisplayCanvas()
-    }, 100)
-  },
+// ── 非响应式实例变量 ──
+let ctx = null
+let _timer = null
+let _longPressTimer = null
+let _progressTimer = null
+let _displayCtx = null
+let _displayW = 0
+let _displayH = 0
+let _ringCanvas = null
+let _ringCtx = null
+let _ringDisplaySize = 0
+let _recordStartMs = 0
+let _inputValue = ''
 
-  onUnload() {
-    if (this._timer) clearInterval(this._timer)
-    this._clearTimers()
-  },
+// ── 生命周期 ──
+onLoad(() => {
+  ctx = uni.createCameraContext()
+  _updateTime()
+  _timer = setInterval(() => {
+    _updateTime()
+  }, 1000)
+  _updateLocation()
+  setTimeout(() => {
+    _initDisplayCanvas()
+  }, 100)
+})
 
-  methods: {
-    _updateTime() {
-      const now = new Date()
-      const pad = n => String(n).padStart(2, '0')
-      const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-      this.currentTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-      this.currentDate = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`
-      this.currentWeekday = weekdays[now.getDay()]
-      this._redrawDisplayCanvas()
+onUnload(() => {
+  if (_timer) clearInterval(_timer)
+  _clearTimers()
+})
+
+// ── 时间更新 ──
+function _updateTime() {
+  const now = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  currentTime.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  currentDate.value = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`
+  currentWeekday.value = weekdays[now.getDay()]
+  _redrawDisplayCanvas()
+}
+
+// ── 位置更新 ──
+function _updateLocation() {
+  uni.getLocation({
+    type: 'gcj02',
+    success: (res) => {
+      reverseGeocode(res.latitude, res.longitude).then((addr) => {
+        currentLocation.value = addr
+        _redrawDisplayCanvas()
+      })
     },
-
-    _updateLocation() {
-      uni.getLocation({
-        type: 'gcj02',
-        success: (res) => {
-          reverseGeocode(res.latitude, res.longitude).then((addr) => {
-            this.currentLocation = addr
-            this._redrawDisplayCanvas()
-          })
-        },
-        fail: (err) => {
-          if (err.errMsg && err.errMsg.includes('auth deny')) {
-            uni.showModal({
-              title: '位置权限',
-              content: '需要获取您的位置信息用于水印显示，是否前往设置开启？',
-              success: (modalRes) => {
-                if (modalRes.confirm) {
-                  uni.openSetting({
-                    success: (settingRes) => {
-                      if (settingRes.authSetting['scope.userLocation']) {
-                        this._updateLocation()
-                      }
-                    }
-                  })
+    fail: (err) => {
+      if (err.errMsg && err.errMsg.includes('auth deny')) {
+        uni.showModal({
+          title: '位置权限',
+          content: '需要获取您的位置信息用于水印显示，是否前往设置开启？',
+          success: (modalRes) => {
+            if (modalRes.confirm) {
+              uni.openSetting({
+                success: (settingRes) => {
+                  if (settingRes.authSetting['scope.userLocation']) {
+                    _updateLocation()
+                  }
                 }
-              }
-            })
-          }
-          this.currentLocation = ''
-          this._redrawDisplayCanvas()
-        }
-      })
-    },
-
-    // --- displayCanvas ---
-
-    _initDisplayCanvas() {
-      const query = uni.createSelectorQuery().in(this)
-      query.select('#displayCanvas')
-        .fields({ node: true, size: true })
-        .exec((res) => {
-          if (!res[0]) return
-          const canvas = res[0].node
-          const dpr = uni.getSystemInfoSync().pixelRatio || 2
-          canvas.width = res[0].width * dpr
-          canvas.height = res[0].height * dpr
-          const ctx = canvas.getContext('2d')
-          ctx.scale(dpr, dpr)
-          this._displayCtx = ctx
-          this._displayW = res[0].width
-          this._displayH = res[0].height
-          this._redrawDisplayCanvas()
-        })
-    },
-
-    _redrawDisplayCanvas() {
-      if (!this._displayCtx) return
-      const ctx = this._displayCtx
-      ctx.clearRect(0, 0, this._displayW, this._displayH)
-      const scale = this._displayW / 750
-      const padLeft = 32 * scale
-      const padBottom = 80 * scale
-      const wmH = this._calcWatermarkHeight(scale)
-      ctx.save()
-      ctx.translate(padLeft, this._displayH - wmH - padBottom)
-      this._drawWatermark(ctx, scale)
-      ctx.restore()
-    },
-
-    // --- 水印高度计算（用于从底部定位） ---
-
-    _calcWatermarkHeight(scale) {
-      const rowGap = 5 * scale
-      const badgeH = 22 * scale * 1.5 + 4 * scale * 2
-      const timeH = 24 * scale * 1.5 + 2 * scale * 2
-      let h = Math.max(badgeH, timeH) + rowGap
-      h += 18 * scale * 1.5 + rowGap
-      if (this.currentLocation) h += 18 * scale * 1.5 + rowGap
-      if (this.watermarkText) h += 5 * scale * 2 + 20 * scale * 1.5
-      return h
-    },
-
-    // --- 统一水印绘制（从 0,0 开始，调用方通过 translate 定位） ---
-
-    _drawWatermark(ctx, scale) {
-      let curY = 0
-      const x = 0
-      const rowGap = 5 * scale
-      const innerGap = 10 * scale
-
-      // --- 打卡 Badge ---
-      const badgeFontSize = 22 * scale
-      ctx.font = `bold ${badgeFontSize}px -apple-system, sans-serif`
-      const badgeTextWidth = ctx.measureText('打卡').width
-      const badgePadX = 14 * scale
-      const badgePadY = 4 * scale
-      const badgeW = badgeTextWidth + badgePadX * 2
-      const badgeH = badgeFontSize * 1.5 + badgePadY * 2
-      const badgeR = 8 * scale
-
-      ctx.fillStyle = '#FFD700'
-      this._roundRect(ctx, x, curY, badgeW, badgeH, badgeR)
-      ctx.fill()
-      ctx.fillStyle = '#FFFFFF'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('打卡', x + badgePadX, curY + badgeH / 2)
-
-      // --- 时间 ---
-      const timeFontSize = 24 * scale
-      const timeText = this.currentTime
-      ctx.font = `500 ${timeFontSize}px "SF Mono", Menlo, monospace`
-      const timeTextWidth = ctx.measureText(timeText).width
-      const timePadX = 14 * scale
-      const timePadY = 2 * scale
-      const timeW = timeTextWidth + timePadX * 2
-      const timeH = timeFontSize * 1.5 + timePadY * 2
-      const timeR = 4 * scale
-      const timeX = x + badgeW + innerGap
-
-      ctx.fillStyle = '#FFFFFF'
-      this._roundRect(ctx, timeX, curY, timeW, timeH, timeR)
-      ctx.fill()
-      ctx.fillStyle = '#000000'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(timeText, timeX + timePadX, curY + timeH / 2)
-
-      curY += Math.max(badgeH, timeH) + rowGap
-
-      // --- 日期 + 星期 ---
-      const dateFontSize = 18 * scale
-      ctx.fillStyle = '#999999'
-      ctx.font = `${dateFontSize}px -apple-system, sans-serif`
-      ctx.textBaseline = 'top'
-      ctx.fillText(`${this.currentDate} ${this.currentWeekday}`, x, curY)
-      curY += dateFontSize * 1.5 + rowGap
-
-      // --- 位置 ---
-      if (this.currentLocation) {
-        const locFontSize = 18 * scale
-        ctx.fillStyle = '#999999'
-        ctx.font = `${locFontSize}px -apple-system, sans-serif`
-        ctx.textBaseline = 'top'
-        ctx.fillText(this.currentLocation, x, curY)
-        curY += locFontSize * 1.5 + rowGap
-      }
-
-      // --- 自定义水印 ---
-      if (this.watermarkText) {
-        const customFontSize = 20 * scale
-        const lineGap = 5 * scale
-        curY += lineGap
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
-        ctx.lineWidth = 1 * scale
-        ctx.beginPath()
-        ctx.moveTo(x, curY)
-        ctx.lineTo(x + 300 * scale, curY)
-        ctx.stroke()
-        curY += lineGap
-
-        ctx.fillStyle = '#FFFFFF'
-        ctx.font = `${customFontSize}px -apple-system, sans-serif`
-        ctx.textBaseline = 'top'
-        ctx.fillText(this.watermarkText, x, curY)
-      }
-    },
-
-    _roundRect(ctx, x, y, w, h, r) {
-      ctx.beginPath()
-      ctx.moveTo(x + r, y)
-      ctx.lineTo(x + w - r, y)
-      ctx.arcTo(x + w, y, x + w, y + r, r)
-      ctx.lineTo(x + w, y + h - r)
-      ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-      ctx.lineTo(x + r, y + h)
-      ctx.arcTo(x, y + h, x, y + h - r, r)
-      ctx.lineTo(x, y + r)
-      ctx.arcTo(x, y, x + r, y, r)
-      ctx.closePath()
-    },
-
-    onToggleFlash() {
-      const order = ['off', 'auto', 'on']
-      const idx = order.indexOf(this.flash)
-      this.flash = order[(idx + 1) % order.length]
-    },
-
-    onToggleCamera() {
-      this.devicePosition = this.devicePosition === 'back' ? 'front' : 'back'
-    },
-
-    onChooseFromAlbum() {
-      uni.chooseMedia({
-        count: 1,
-        mediaType: ['image', 'video'],
-        sourceType: ['album'],
-        success: (res) => {
-          const file = res.tempFiles[0]
-          if (file.fileType === 'video') {
-            uni.navigateTo({
-              url: `/pages/preview/preview?type=video&src=${encodeURIComponent(file.tempFilePath)}`
-            })
-          } else {
-            uni.navigateTo({
-              url: `/pages/editor/editor?src=${encodeURIComponent(file.tempFilePath)}`
-            })
-          }
-        }
-      })
-    },
-
-    // --- 快门交互 ---
-
-    onShutterStart() {
-      this._longPressTimer = setTimeout(() => {
-        this._startRecording()
-      }, LONG_PRESS_MS)
-    },
-
-    onShutterEnd() {
-      if (this._longPressTimer) {
-        clearTimeout(this._longPressTimer)
-        this._longPressTimer = null
-      }
-      if (this.isRecording) {
-        this._stopRecording()
-      } else {
-        this._takePhoto()
-      }
-    },
-
-    _takePhoto() {
-      this.ctx.takePhoto({
-        quality: 'high',
-        success: (res) => {
-          this._composeWatermark(res.tempImagePath)
-        },
-        fail: (err) => {
-          console.error('takePhoto fail', err)
-          uni.showToast({ title: '拍照失败', icon: 'none' })
-        }
-      })
-    },
-
-    _startRecording() {
-      this.isRecording = true
-      this.progressDeg = 0
-      this._recordStartMs = Date.now()
-      this._ringCtx = null
-      this.ctx.startRecord({
-        success: () => {
-          console.log('startRecord success')
-        },
-        fail: (err) => {
-          console.error('startRecord fail', err)
-          this.isRecording = false
-          uni.showToast({ title: '录像启动失败', icon: 'none' })
-        }
-      })
-      setTimeout(() => {
-        this._initProgressCanvas()
-      }, 50)
-      this._progressTimer = setInterval(() => {
-        const elapsed = Date.now() - this._recordStartMs
-        const ratio = Math.min(elapsed / MAX_RECORD_MS, 1)
-        const deg = Math.round(ratio * 360)
-        this._drawProgressRing(deg)
-        if (ratio >= 1) {
-          this._stopRecording()
-        }
-      }, 100)
-    },
-
-    _stopRecording() {
-      this._clearTimers()
-      this._ringCtx = null
-      this.ctx.stopRecord({
-        success: (res) => {
-          this.isRecording = false
-          uni.navigateTo({
-            url: `/pages/preview/preview?type=video&thumbSrc=${encodeURIComponent(res.tempThumbPath)}&src=${encodeURIComponent(res.tempVideoPath)}`
-          })
-        },
-        fail: (err) => {
-          console.error('stopRecord fail', err)
-          this.isRecording = false
-          uni.showToast({ title: '录像停止失败', icon: 'none' })
-        }
-      })
-    },
-
-    _initProgressCanvas() {
-      const query = uni.createSelectorQuery().in(this)
-      query.select('#progressCanvas')
-        .fields({ node: true, size: true })
-        .exec((res) => {
-          if (!res[0]) return
-          const canvas = res[0].node
-          const dpr = uni.getSystemInfoSync().pixelRatio || 2
-          canvas.width = res[0].width * dpr
-          canvas.height = res[0].height * dpr
-          this._ringCanvas = canvas
-          this._ringCtx = canvas.getContext('2d')
-          this._ringCtx.scale(dpr, dpr)
-          this._ringDisplaySize = res[0].width
-        })
-    },
-
-    _drawProgressRing(deg) {
-      if (!this._ringCtx) return
-      const ctx = this._ringCtx
-      const size = this._ringDisplaySize || 76
-      const center = size / 2
-      const radius = center - 4
-
-      ctx.clearRect(0, 0, size, size)
-      ctx.beginPath()
-      ctx.arc(center, center, radius, 0, Math.PI * 2)
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
-      ctx.lineWidth = 3
-      ctx.stroke()
-
-      if (deg > 0) {
-        const startAngle = -Math.PI / 2
-        const endAngle = startAngle + (deg / 360) * Math.PI * 2
-        ctx.beginPath()
-        ctx.arc(center, center, radius, startAngle, endAngle)
-        ctx.strokeStyle = '#FF0000'
-        ctx.lineWidth = 3
-        ctx.lineCap = 'round'
-        ctx.stroke()
-      }
-    },
-
-    _clearTimers() {
-      if (this._longPressTimer) {
-        clearTimeout(this._longPressTimer)
-        this._longPressTimer = null
-      }
-      if (this._progressTimer) {
-        clearInterval(this._progressTimer)
-        this._progressTimer = null
-      }
-    },
-
-    // --- 水印弹窗 ---
-
-    onShowWatermarkModal() {
-      this.showWatermarkModal = true
-    },
-
-    onHideWatermarkModal() {
-      this.showWatermarkModal = false
-    },
-
-    onWatermarkInput(e) {
-      this._inputValue = e.detail.value
-    },
-
-    onClearWatermark() {
-      this._inputValue = ''
-      this.watermarkText = ''
-      this.showWatermarkModal = false
-      this._redrawDisplayCanvas()
-    },
-
-    onConfirmWatermark() {
-      this.watermarkText = this._inputValue
-      this.showWatermarkModal = false
-      this._redrawDisplayCanvas()
-    },
-
-    onWatermarkConfirm(e) {
-      this.watermarkText = e.detail.value
-      this.showWatermarkModal = false
-      this._redrawDisplayCanvas()
-    },
-
-    // --- Canvas 水印合成 ---
-
-    _composeWatermark(imagePath) {
-      uni.getImageInfo({
-        src: imagePath,
-        success: (info) => {
-          this._drawOnCanvas(imagePath, info.width, info.height)
-        },
-        fail: () => {
-          this._navigateToPreview('image', imagePath)
-        }
-      })
-    },
-
-    _drawOnCanvas(imagePath, cw, ch) {
-      const query = uni.createSelectorQuery().in(this)
-      query.select('#watermarkCanvas')
-        .fields({ node: true, size: true })
-        .exec((res) => {
-          if (!res[0]) {
-            this._navigateToPreview('image', imagePath)
-            return
-          }
-          const canvas = res[0].node
-          const ctx = canvas.getContext('2d')
-          canvas.width = cw
-          canvas.height = ch
-
-          const img = canvas.createImage()
-          img.src = imagePath
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0, cw, ch)
-            const scale = cw / 750
-            const padLeft = 32 * scale
-            const padBottom = 80 * scale
-            const wmH = this._calcWatermarkHeight(scale)
-            ctx.save()
-            ctx.translate(padLeft, ch - wmH - padBottom)
-            this._drawWatermark(ctx, scale)
-            ctx.restore()
-            uni.canvasToTempFilePath({
-              canvas,
-              success: (out) => {
-                this._navigateToPreview('image', out.tempFilePath)
-              },
-              fail: () => {
-                this._navigateToPreview('image', imagePath)
-              }
-            })
-          }
-          img.onerror = () => {
-            this._navigateToPreview('image', imagePath)
+              })
+            }
           }
         })
-    },
-
-    _navigateToPreview(type, src) {
-      if (type === 'video') {
-        uni.navigateTo({
-          url: `/pages/preview/preview?type=video&src=${encodeURIComponent(src)}`
-        })
-      } else {
-        uni.navigateTo({
-          url: `/pages/editor/editor?src=${encodeURIComponent(src)}`
-        })
       }
-    },
-
-    onCameraError(e) {
-      console.error('camera error', e.detail)
-      uni.showToast({ title: '相机出错，请检查权限', icon: 'none' })
+      currentLocation.value = ''
+      _redrawDisplayCanvas()
     }
+  })
+}
+
+// ── displayCanvas ──
+function _initDisplayCanvas() {
+  const query = uni.createSelectorQuery().in(instance)
+  query.select('#displayCanvas')
+    .fields({ node: true, size: true })
+    .exec((res) => {
+      if (!res[0]) return
+      const canvas = res[0].node
+      const dpr = (uni.getWindowInfo ? uni.getWindowInfo().pixelRatio : uni.getSystemInfoSync().pixelRatio) || 2
+      canvas.width = res[0].width * dpr
+      canvas.height = res[0].height * dpr
+      const ctx2d = canvas.getContext('2d')
+      ctx2d.scale(dpr, dpr)
+      _displayCtx = ctx2d
+      _displayW = res[0].width
+      _displayH = res[0].height
+      _redrawDisplayCanvas()
+    })
+}
+
+function _redrawDisplayCanvas() {
+  if (!_displayCtx) return
+  const ctx2d = _displayCtx
+  ctx2d.clearRect(0, 0, _displayW, _displayH)
+  const scale = _displayW / 750
+  const padLeft = 32 * scale
+  const padBottom = 80 * scale
+  const wmH = _calcWatermarkHeight(scale)
+  ctx2d.save()
+  ctx2d.translate(padLeft, _displayH - wmH - padBottom)
+  _drawWatermark(ctx2d, scale)
+  ctx2d.restore()
+}
+
+// ── 水印高度计算 ──
+function _calcWatermarkHeight(scale) {
+  const rowGap = 5 * scale
+  const badgeH = 22 * scale * 1.5 + 4 * scale * 2
+  const timeH = 24 * scale * 1.5 + 2 * scale * 2
+  let h = Math.max(badgeH, timeH) + rowGap
+  h += 18 * scale * 1.5 + rowGap
+  if (currentLocation.value) h += 18 * scale * 1.5 + rowGap
+  if (watermarkText.value) h += 5 * scale * 2 + 20 * scale * 1.5
+  return h
+}
+
+// ── 统一水印绘制 ──
+function _drawWatermark(ctx2d, scale) {
+  let curY = 0
+  const x = 0
+  const rowGap = 5 * scale
+  const innerGap = 10 * scale
+
+  // 打卡 Badge
+  const badgeFontSize = 22 * scale
+  ctx2d.font = `bold ${badgeFontSize}px -apple-system, sans-serif`
+  const badgeTextWidth = ctx2d.measureText('打卡').width
+  const badgePadX = 14 * scale
+  const badgePadY = 4 * scale
+  const badgeW = badgeTextWidth + badgePadX * 2
+  const badgeH = badgeFontSize * 1.5 + badgePadY * 2
+  const badgeR = 8 * scale
+
+  ctx2d.fillStyle = '#FFD700'
+  _roundRect(ctx2d, x, curY, badgeW, badgeH, badgeR)
+  ctx2d.fill()
+  ctx2d.fillStyle = '#FFFFFF'
+  ctx2d.textBaseline = 'middle'
+  ctx2d.fillText('打卡', x + badgePadX, curY + badgeH / 2)
+
+  // 时间
+  const timeFontSize = 24 * scale
+  const timeText = currentTime.value
+  ctx2d.font = `500 ${timeFontSize}px "SF Mono", Menlo, monospace`
+  const timeTextWidth = ctx2d.measureText(timeText).width
+  const timePadX = 14 * scale
+  const timePadY = 2 * scale
+  const timeW = timeTextWidth + timePadX * 2
+  const timeH = timeFontSize * 1.5 + timePadY * 2
+  const timeR = 4 * scale
+  const timeX = x + badgeW + innerGap
+
+  ctx2d.fillStyle = '#FFFFFF'
+  _roundRect(ctx2d, timeX, curY, timeW, timeH, timeR)
+  ctx2d.fill()
+  ctx2d.fillStyle = '#000000'
+  ctx2d.textBaseline = 'middle'
+  ctx2d.fillText(timeText, timeX + timePadX, curY + timeH / 2)
+
+  curY += Math.max(badgeH, timeH) + rowGap
+
+  // 日期 + 星期
+  const dateFontSize = 18 * scale
+  ctx2d.fillStyle = '#999999'
+  ctx2d.font = `${dateFontSize}px -apple-system, sans-serif`
+  ctx2d.textBaseline = 'top'
+  ctx2d.fillText(`${currentDate.value} ${currentWeekday.value}`, x, curY)
+  curY += dateFontSize * 1.5 + rowGap
+
+  // 位置
+  if (currentLocation.value) {
+    const locFontSize = 18 * scale
+    ctx2d.fillStyle = '#999999'
+    ctx2d.font = `${locFontSize}px -apple-system, sans-serif`
+    ctx2d.textBaseline = 'top'
+    ctx2d.fillText(currentLocation.value, x, curY)
+    curY += locFontSize * 1.5 + rowGap
   }
+
+  // 自定义水印
+  if (watermarkText.value) {
+    const customFontSize = 20 * scale
+    const lineGap = 5 * scale
+    curY += lineGap
+    ctx2d.strokeStyle = 'rgba(255, 255, 255, 0.15)'
+    ctx2d.lineWidth = 1 * scale
+    ctx2d.beginPath()
+    ctx2d.moveTo(x, curY)
+    ctx2d.lineTo(x + 300 * scale, curY)
+    ctx2d.stroke()
+    curY += lineGap
+
+    ctx2d.fillStyle = '#FFFFFF'
+    ctx2d.font = `${customFontSize}px -apple-system, sans-serif`
+    ctx2d.textBaseline = 'top'
+    ctx2d.fillText(watermarkText.value, x, curY)
+  }
+}
+
+function _roundRect(ctx2d, x, y, w, h, r) {
+  ctx2d.beginPath()
+  ctx2d.moveTo(x + r, y)
+  ctx2d.lineTo(x + w - r, y)
+  ctx2d.arcTo(x + w, y, x + w, y + r, r)
+  ctx2d.lineTo(x + w, y + h - r)
+  ctx2d.arcTo(x + w, y + h, x + w - r, y + h, r)
+  ctx2d.lineTo(x + r, y + h)
+  ctx2d.arcTo(x, y + h, x, y + h - r, r)
+  ctx2d.lineTo(x, y + r)
+  ctx2d.arcTo(x, y, x + r, y, r)
+  ctx2d.closePath()
+}
+
+// ── 闪光灯 / 摄像头切换 ──
+function onToggleFlash() {
+  const order = ['off', 'auto', 'on']
+  const idx = order.indexOf(flash.value)
+  flash.value = order[(idx + 1) % order.length]
+}
+
+function onToggleCamera() {
+  devicePosition.value = devicePosition.value === 'back' ? 'front' : 'back'
+}
+
+// ── 从相册选择 ──
+function onChooseFromAlbum() {
+  uni.chooseMedia({
+    count: 1,
+    mediaType: ['image', 'video'],
+    sourceType: ['album'],
+    success: (res) => {
+      const file = res.tempFiles[0]
+      if (file.fileType === 'video') {
+        uni.navigateTo({
+          url: `/pages/preview/preview?type=video&src=${encodeURIComponent(file.tempFilePath)}`
+        })
+      } else {
+        uni.navigateTo({
+          url: `/pages/editor/editor?src=${encodeURIComponent(file.tempFilePath)}`
+        })
+      }
+    }
+  })
+}
+
+// ── 快门交互 ──
+function onShutterStart() {
+  _longPressTimer = setTimeout(() => {
+    _startRecording()
+  }, LONG_PRESS_MS)
+}
+
+function onShutterEnd() {
+  if (_longPressTimer) {
+    clearTimeout(_longPressTimer)
+    _longPressTimer = null
+  }
+  if (isRecording.value) {
+    _stopRecording()
+  } else {
+    _takePhoto()
+  }
+}
+
+function _takePhoto() {
+  ctx.takePhoto({
+    quality: 'high',
+    success: (res) => {
+      _composeWatermark(res.tempImagePath)
+    },
+    fail: (err) => {
+      console.error('takePhoto fail', err)
+      uni.showToast({ title: '拍照失败', icon: 'none' })
+    }
+  })
+}
+
+function _startRecording() {
+  isRecording.value = true
+  _recordStartMs = Date.now()
+  _ringCtx = null
+  ctx.startRecord({
+    success: () => {
+      console.log('startRecord success')
+    },
+    fail: (err) => {
+      console.error('startRecord fail', err)
+      isRecording.value = false
+      uni.showToast({ title: '录像启动失败', icon: 'none' })
+    }
+  })
+  setTimeout(() => {
+    _initProgressCanvas()
+  }, 50)
+  _progressTimer = setInterval(() => {
+    const elapsed = Date.now() - _recordStartMs
+    const ratio = Math.min(elapsed / MAX_RECORD_MS, 1)
+    const deg = Math.round(ratio * 360)
+    _drawProgressRing(deg)
+    if (ratio >= 1) {
+      _stopRecording()
+    }
+  }, 100)
+}
+
+function _stopRecording() {
+  _clearTimers()
+  _ringCtx = null
+  ctx.stopRecord({
+    success: (res) => {
+      isRecording.value = false
+      uni.navigateTo({
+        url: `/pages/preview/preview?type=video&thumbSrc=${encodeURIComponent(res.tempThumbPath)}&src=${encodeURIComponent(res.tempVideoPath)}`
+      })
+    },
+    fail: (err) => {
+      console.error('stopRecord fail', err)
+      isRecording.value = false
+      uni.showToast({ title: '录像停止失败', icon: 'none' })
+    }
+  })
+}
+
+function _initProgressCanvas() {
+  const query = uni.createSelectorQuery().in(instance)
+  query.select('#progressCanvas')
+    .fields({ node: true, size: true })
+    .exec((res) => {
+      if (!res[0]) return
+      const canvas = res[0].node
+      const dpr = (uni.getWindowInfo ? uni.getWindowInfo().pixelRatio : uni.getSystemInfoSync().pixelRatio) || 2
+      canvas.width = res[0].width * dpr
+      canvas.height = res[0].height * dpr
+      _ringCanvas = canvas
+      _ringCtx = canvas.getContext('2d')
+      _ringCtx.scale(dpr, dpr)
+      _ringDisplaySize = res[0].width
+    })
+}
+
+function _drawProgressRing(deg) {
+  if (!_ringCtx) return
+  const ctx2d = _ringCtx
+  const size = _ringDisplaySize || 76
+  const center = size / 2
+  const radius = center - 4
+
+  ctx2d.clearRect(0, 0, size, size)
+  ctx2d.beginPath()
+  ctx2d.arc(center, center, radius, 0, Math.PI * 2)
+  ctx2d.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+  ctx2d.lineWidth = 3
+  ctx2d.stroke()
+
+  if (deg > 0) {
+    const startAngle = -Math.PI / 2
+    const endAngle = startAngle + (deg / 360) * Math.PI * 2
+    ctx2d.beginPath()
+    ctx2d.arc(center, center, radius, startAngle, endAngle)
+    ctx2d.strokeStyle = '#FF0000'
+    ctx2d.lineWidth = 3
+    ctx2d.lineCap = 'round'
+    ctx2d.stroke()
+  }
+}
+
+function _clearTimers() {
+  if (_longPressTimer) {
+    clearTimeout(_longPressTimer)
+    _longPressTimer = null
+  }
+  if (_progressTimer) {
+    clearInterval(_progressTimer)
+    _progressTimer = null
+  }
+}
+
+// ── 水印弹窗 ──
+function onShowWatermarkModal() {
+  showWatermarkModal.value = true
+}
+
+function onHideWatermarkModal() {
+  showWatermarkModal.value = false
+}
+
+function onWatermarkInput(e) {
+  _inputValue = e.detail.value
+}
+
+function onClearWatermark() {
+  _inputValue = ''
+  watermarkText.value = ''
+  showWatermarkModal.value = false
+  _redrawDisplayCanvas()
+}
+
+function onConfirmWatermark() {
+  watermarkText.value = _inputValue
+  showWatermarkModal.value = false
+  _redrawDisplayCanvas()
+}
+
+function onWatermarkConfirm(e) {
+  watermarkText.value = e.detail.value
+  showWatermarkModal.value = false
+  _redrawDisplayCanvas()
+}
+
+// ── Canvas 水印合成 ──
+function _composeWatermark(imagePath) {
+  uni.getImageInfo({
+    src: imagePath,
+    success: (info) => {
+      _drawOnCanvas(imagePath, info.width, info.height)
+    },
+    fail: () => {
+      _navigateToPreview('image', imagePath)
+    }
+  })
+}
+
+function _drawOnCanvas(imagePath, cw, ch) {
+  const query = uni.createSelectorQuery().in(instance)
+  query.select('#watermarkCanvas')
+    .fields({ node: true, size: true })
+    .exec((res) => {
+      if (!res[0]) {
+        _navigateToPreview('image', imagePath)
+        return
+      }
+      const canvas = res[0].node
+      const ctx2d = canvas.getContext('2d')
+      canvas.width = cw
+      canvas.height = ch
+
+      const img = canvas.createImage()
+      img.src = imagePath
+      img.onload = () => {
+        ctx2d.drawImage(img, 0, 0, cw, ch)
+        const scale = cw / 750
+        const padLeft = 32 * scale
+        const padBottom = 80 * scale
+        const wmH = _calcWatermarkHeight(scale)
+        ctx2d.save()
+        ctx2d.translate(padLeft, ch - wmH - padBottom)
+        _drawWatermark(ctx2d, scale)
+        ctx2d.restore()
+        uni.canvasToTempFilePath({
+          canvas,
+          success: (out) => {
+            _navigateToPreview('image', out.tempFilePath)
+          },
+          fail: () => {
+            _navigateToPreview('image', imagePath)
+          }
+        })
+      }
+      img.onerror = () => {
+        _navigateToPreview('image', imagePath)
+      }
+    })
+}
+
+function _navigateToPreview(type, src) {
+  if (type === 'video') {
+    uni.navigateTo({
+      url: `/pages/preview/preview?type=video&src=${encodeURIComponent(src)}`
+    })
+  } else {
+    uni.navigateTo({
+      url: `/pages/editor/editor?src=${encodeURIComponent(src)}`
+    })
+  }
+}
+
+function onCameraError(e) {
+  console.error('camera error', e.detail)
+  uni.showToast({ title: '相机出错，请检查权限', icon: 'none' })
 }
 </script>
 

@@ -20,59 +20,42 @@
   </view>
 </template>
 
-<script>
-export default {
-  data() {
-    return {
-      type: 'image',
-      src: '',
-      thumbSrc: ''
-    }
-  },
+<script setup>
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 
-  onLoad(options) {
-    this.type = options.type || 'image'
-    this.src = decodeURIComponent(options.src || '')
-    this.thumbSrc = decodeURIComponent(options.thumbSrc || '')
-  },
+const type = ref('image')
+const src = ref('')
+const thumbSrc = ref('')
 
-  methods: {
-    onSave() {
-      if (this.type === 'image') {
-        uni.saveImageToPhotosAlbum({
-          filePath: this.src,
-          success: () => {
-            uni.showToast({ title: '已保存到相册', icon: 'success' })
-          },
-          fail: (err) => {
-            if (err.errMsg && err.errMsg.includes('auth deny')) {
-              uni.showToast({ title: '请授权访问相册', icon: 'none' })
-            } else {
-              uni.showToast({ title: '保存失败', icon: 'none' })
-            }
-          }
-        })
-      } else {
-        uni.saveVideoToPhotosAlbum({
-          filePath: this.src,
-          success: () => {
-            uni.showToast({ title: '已保存到相册', icon: 'success' })
-          },
-          fail: (err) => {
-            if (err.errMsg && err.errMsg.includes('auth deny')) {
-              uni.showToast({ title: '请授权访问相册', icon: 'none' })
-            } else {
-              uni.showToast({ title: '保存失败', icon: 'none' })
-            }
-          }
-        })
-      }
+onLoad((options) => {
+  type.value = options.type || 'image'
+  src.value = decodeURIComponent(options.src || '')
+  thumbSrc.value = decodeURIComponent(options.thumbSrc || '')
+})
+
+function onSave() {
+  const saveFn = type.value === 'image'
+    ? uni.saveImageToPhotosAlbum
+    : uni.saveVideoToPhotosAlbum
+
+  saveFn({
+    filePath: src.value,
+    success: () => {
+      uni.showToast({ title: '已保存到相册', icon: 'success' })
     },
-
-    onRetake() {
-      uni.navigateBack()
+    fail: (err) => {
+      if (err.errMsg && err.errMsg.includes('auth deny')) {
+        uni.showToast({ title: '请授权访问相册', icon: 'none' })
+      } else {
+        uni.showToast({ title: '保存失败', icon: 'none' })
+      }
     }
-  }
+  })
+}
+
+function onRetake() {
+  uni.navigateBack()
 }
 </script>
 

@@ -9,6 +9,14 @@
 			}
 		},
 		{
+			"path": "pages/editor/editor",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#000000"
+			}
+		},
+		{
 			"path": "pages/preview/preview",
 			"style": {
 				"navigationStyle": "custom",
