@@ -21,7 +21,7 @@
 
     <!-- ===== 操作栏 ===== -->
     <view class="action-bar">
-      <view class="action-group" :class="{ 'is-hidden': isEditing }">
+      <view class="action-group" :class="{ 'is-hidden': isEditing && activeTool !== 'sticker' && activeTool !== 'text' }">
         <view class="action-btn" :style="{ opacity: canUndo ? 1 : 0.25 }" @tap="onUndo">
           <text class="action-icon">↩</text>
           <text class="action-label">撤销</text>
@@ -35,7 +35,7 @@
           <text class="action-label">保存</text>
         </view>
       </view>
-      <view class="action-group" :class="{ 'is-hidden': !isEditing }">
+      <view class="action-group" :class="{ 'is-hidden': !isEditing || activeTool === 'sticker' || activeTool === 'text' }">
         <view class="action-btn action-btn-cancel" @tap="onToolCancel">
           <text class="action-icon">✕</text>
           <text class="action-label">取消</text>
@@ -173,7 +173,7 @@
               :key="c"
               :class="['color-swatch', textColor === c ? 'is-selected' : '']"
               :style="{ backgroundColor: c }"
-              @tap="textColor = c"
+              @tap="onTextColorChange(c)"
             ></view>
           </view>
         </view>
@@ -184,7 +184,7 @@
               v-for="s in textSizes"
               :key="s.value"
               :class="['panel-btn', textFontSize === s.value ? 'is-selected' : '']"
-              @tap="textFontSize = s.value"
+              @tap="onTextSizeChange(s.value)"
             >
               <text class="panel-btn-text">{{ s.label }}</text>
             </view>
@@ -251,10 +251,10 @@ const cropRatios = ref([
 ])
 
 // ── 贴纸 ──
-const activeSticker = ref(null)
+const stickerElements = ref([])
 
 // ── 文字 ──
-const activeText = ref(null)
+const textElements = ref([])
 const textInputContent = ref('')
 const textColor = ref('#FFFFFF')
 const textFontSize = ref(32)
@@ -263,6 +263,10 @@ const textSizes = ref([
   { value: 32, label: '中' },
   { value: 44, label: '大' },
 ])
+
+// ── 选中状态 ──
+const selectedId = ref(null)
+const selectedType = ref('')
 
 // ── 贴纸资源 ──
 const stickerList = ref([
@@ -293,10 +297,8 @@ let snapshotImage = null
 let cropDragging = ''
 let cropStartPos = null
 let cropStartRect = null
-let stickerDragStart = null
-let stickerTwoFinger = null
-let textDragStart = null
-let textTwoFinger = null
+let dragMode = ''
+let dragStart = null
 
 // ── 生命周期 ──
 onLoad((options) => {
@@ -458,12 +460,17 @@ function onSave() {
 //  工具管理
 // ═══════════════════════════════
 
-function onSelectTool(key) {
-  if (isEditing.value && activeTool.value === key) {
-    onToolCancel()
-    return
+async function onSelectTool(key) {
+  // 切换工具时自动合成当前贴纸/文字
+  if (isEditing.value) {
+    if (activeTool.value === 'sticker' && stickerElements.value.length > 0) {
+      await _confirmSticker()
+    } else if (activeTool.value === 'text' && textElements.value.length > 0) {
+      await _confirmText()
+    } else {
+      _clearToolState()
+    }
   }
-  if (isEditing.value) _clearToolState()
 
   activeTool.value = key
   isEditing.value = true
@@ -507,12 +514,12 @@ function _clearToolState() {
   rotateAngle.value = 0
   cropRect.value = { x: 0, y: 0, w: 0, h: 0 }
   cropDragging = ''
-  activeSticker.value = null
-  stickerDragStart = null
-  stickerTwoFinger = null
-  activeText.value = null
-  textDragStart = null
-  textTwoFinger = null
+  stickerElements.value = []
+  textElements.value = []
+  selectedId.value = null
+  selectedType.value = ''
+  dragMode = ''
+  dragStart = null
   textInputContent.value = ''
 }
 
@@ -579,12 +586,12 @@ function onCanvasTouchEnd() {
       _renderPreview()
       break
     case 'sticker':
-      stickerDragStart = null
-      stickerTwoFinger = null
+      dragMode = ''
+      dragStart = null
       break
     case 'text':
-      textDragStart = null
-      textTwoFinger = null
+      dragMode = ''
+      dragStart = null
       break
     case 'crop':
       cropDragging = ''
@@ -926,106 +933,238 @@ async function _confirmCrop() {
 function onAddSticker(sticker) {
   const ir = imageRect
   if (!ir) return
-  isEditing.value = true
-  activeSticker.value = {
+  const id = Date.now()
+  stickerElements.value.push({
+    id,
     emoji: sticker.emoji,
     x: ir.x + ir.w / 2,
     y: ir.y + ir.h / 2,
     fontSize: 48,
     rotation: 0,
-  }
-  stickerDragStart = null
+  })
+  selectedId.value = id
+  selectedType.value = 'sticker'
   _renderPreview()
 }
 
-function _renderStickerOverlay() {
-  if (!activeSticker.value) return
-  const ctx = canvasCtx
-  const s = activeSticker.value
+function _getStickerBounds(el) {
+  const halfSize = el.fontSize * 0.75
+  return { halfW: halfSize, halfH: halfSize }
+}
 
-  ctx.save()
-  ctx.translate(s.x, s.y)
-  ctx.rotate(s.rotation)
+function _drawSelectionFrame(ctx, halfW, halfH) {
+  const pad = 12
+  const fw = halfW + pad
+  const fh = halfH + pad
 
-  ctx.font = `${s.fontSize}px sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(s.emoji, 0, 0)
-
-  const half = s.fontSize / 2 + 8
   ctx.strokeStyle = '#4cd964'
-  ctx.lineWidth = 1
+  ctx.lineWidth = 1.5
   ctx.setLineDash([5, 5])
-  ctx.strokeRect(-half, -half, half * 2, half * 2)
+  ctx.strokeRect(-fw, -fh, fw * 2, fh * 2)
   ctx.setLineDash([])
 
+  // 旋转手柄连接线
+  const rotateOffset = 30
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(0, -fh)
+  ctx.lineTo(0, -fh - rotateOffset)
+  ctx.stroke()
+
+  // 旋转手柄
+  ctx.fillStyle = '#007AFF'
+  ctx.beginPath()
+  ctx.arc(0, -fh - rotateOffset, 10, 0, Math.PI * 2)
+  ctx.fill()
+
+  // 四角缩放手柄
+  const corners = [
+    { x: -fw, y: -fh }, { x: fw, y: -fh },
+    { x: -fw, y: fh },  { x: fw, y: fh },
+  ]
+  ctx.fillStyle = '#fff'
+  corners.forEach(c => {
+    ctx.beginPath()
+    ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
+    ctx.fill()
+  })
+}
+
+function _getDeleteBtnWorldPos(el, halfW, halfH) {
+  const pad = 12
+  const fw = halfW + pad
+  const fh = halfH + pad
+  // 本地坐标：右上角偏上
+  const localX = fw
+  const localY = -fh - 16
+  // 旋转到世界坐标
+  const cos = Math.cos(el.rotation)
+  const sin = Math.sin(el.rotation)
+  return {
+    x: el.x + localX * cos - localY * sin,
+    y: el.y + localX * sin + localY * cos
+  }
+}
+
+function _drawDeleteBtn(ctx, wx, wy) {
+  ctx.save()
   ctx.fillStyle = '#E63946'
   ctx.beginPath()
-  ctx.arc(half, -half, 11, 0, Math.PI * 2)
+  ctx.arc(wx, wy, 11, 0, Math.PI * 2)
   ctx.fill()
   ctx.fillStyle = '#fff'
   ctx.font = '13px sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('×', half, -half)
-
+  ctx.fillText('×', wx, wy)
   ctx.restore()
 }
 
-function _stickerTouchStart(touch, e) {
-  if (!activeSticker.value) return
+function _renderStickerOverlay() {
+  const ctx = canvasCtx
+  let deleteBtnPos = null
 
-  if (e && e.touches && e.touches.length === 2) {
-    const t0 = e.touches[0]
-    const t1 = e.touches[1]
-    stickerTwoFinger = {
-      dist: Math.sqrt((t1.x - t0.x) ** 2 + (t1.y - t0.y) ** 2),
-      angle: Math.atan2(t1.y - t0.y, t1.x - t0.x),
-      snapshot: { ...activeSticker.value }
+  stickerElements.value.forEach(el => {
+    ctx.save()
+    ctx.translate(el.x, el.y)
+    ctx.rotate(el.rotation)
+
+    ctx.font = `${el.fontSize}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(el.emoji, 0, 0)
+
+    if (selectedId.value === el.id && selectedType.value === 'sticker') {
+      const { halfW, halfH } = _getStickerBounds(el)
+      _drawSelectionFrame(ctx, halfW, halfH)
+      // 计算删除按钮的世界坐标（ctx.restore 之后再绘制）
+      deleteBtnPos = _getDeleteBtnWorldPos(el, halfW, halfH)
     }
-    return
+
+    ctx.restore()
+  })
+
+  // 删除按钮不跟随旋转，在世界坐标下绘制
+  if (deleteBtnPos) {
+    _drawDeleteBtn(ctx, deleteBtnPos.x, deleteBtnPos.y)
+  }
+}
+
+function _hitToLocal(tx, ty, el) {
+  const dx = tx - el.x
+  const dy = ty - el.y
+  const cos = Math.cos(-el.rotation)
+  const sin = Math.sin(-el.rotation)
+  return { x: dx * cos - dy * sin, y: dx * sin + dy * cos }
+}
+
+function _dist(x1, y1, x2, y2) {
+  return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+}
+
+function _stickerTouchStart(touch, e) {
+  const tx = touch.x
+  const ty = touch.y
+
+  // 如果有选中元素，先检测手柄
+  if (selectedId.value && selectedType.value === 'sticker') {
+    const el = stickerElements.value.find(s => s.id === selectedId.value)
+    if (el) {
+      const { halfW, halfH } = _getStickerBounds(el)
+      const pad = 12
+      const fw = halfW + pad
+      const fh = halfH + pad
+      const local = _hitToLocal(tx, ty, el)
+
+      // 删除按钮（世界坐标）
+      const dp = _getDeleteBtnWorldPos(el, halfW, halfH)
+      if (_dist(tx, ty, dp.x, dp.y) <= 14) {
+        stickerElements.value = stickerElements.value.filter(s => s.id !== el.id)
+        selectedId.value = null
+        _renderPreview()
+        return
+      }
+
+      // 旋转手柄
+      if (_dist(local.x, local.y, 0, -fh - 30) <= 14) {
+        dragMode = 'rotate'
+        dragStart = { angle: Math.atan2(ty - el.y, tx - el.x), snapshot: { ...el } }
+        return
+      }
+
+      // 四角缩放手柄
+      const corners = [
+        { x: -fw, y: -fh }, { x: fw, y: -fh },
+        { x: -fw, y: fh },  { x: fw, y: fh },
+      ]
+      for (const c of corners) {
+        if (_dist(local.x, local.y, c.x, c.y) <= 12) {
+          dragMode = 'scale'
+          const centerDist = _dist(tx, ty, el.x, el.y)
+          dragStart = { centerDist, snapshot: { ...el } }
+          return
+        }
+      }
+
+      // 选中框内拖动
+      if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
+        dragMode = 'move'
+        dragStart = { x: tx, y: ty, sx: el.x, sy: el.y }
+        return
+      }
+    }
   }
 
-  const s = activeSticker.value
-  const half = s.fontSize / 2 + 8
+  // 检测是否点击了某个贴纸（从后往前，上层优先）
+  for (let i = stickerElements.value.length - 1; i >= 0; i--) {
+    const el = stickerElements.value[i]
+    const { halfW, halfH } = _getStickerBounds(el)
+    const pad = 12
+    const local = _hitToLocal(tx, ty, el)
+    if (Math.abs(local.x) <= halfW + pad && Math.abs(local.y) <= halfH + pad) {
+      selectedId.value = el.id
+      selectedType.value = 'sticker'
+      dragMode = 'move'
+      dragStart = { x: tx, y: ty, sx: el.x, sy: el.y }
+      _renderPreview()
+      return
+    }
+  }
 
-  if (Math.sqrt((touch.x - (s.x + half)) ** 2 + (touch.y - (s.y - half)) ** 2) <= 15) {
-    activeSticker.value = null
+  // 空白区域，取消选中
+  if (selectedId.value && selectedType.value === 'sticker') {
+    selectedId.value = null
+    selectedType.value = ''
     _renderPreview()
-    return
-  }
-
-  if (Math.abs(touch.x - s.x) < half && Math.abs(touch.y - s.y) < half) {
-    stickerDragStart = { x: touch.x, y: touch.y, sx: s.x, sy: s.y }
   }
 }
 
 function _stickerTouchMove(touch, e) {
-  if (!activeSticker.value) return
+  if (!selectedId.value || selectedType.value !== 'sticker' || !dragStart) return
+  const el = stickerElements.value.find(s => s.id === selectedId.value)
+  if (!el) return
 
-  if (e && e.touches && e.touches.length === 2 && stickerTwoFinger) {
-    const t0 = e.touches[0]
-    const t1 = e.touches[1]
-    const dist = Math.sqrt((t1.x - t0.x) ** 2 + (t1.y - t0.y) ** 2)
-    const angle = Math.atan2(t1.y - t0.y, t1.x - t0.x)
-    const scale = dist / stickerTwoFinger.dist
-    const dAngle = angle - stickerTwoFinger.angle
-    const snap = stickerTwoFinger.snapshot
-    activeSticker.value.fontSize = Math.max(20, Math.round(snap.fontSize * scale))
-    activeSticker.value.rotation = (snap.rotation || 0) + dAngle
-    _renderPreview()
-    return
+  const tx = touch.x
+  const ty = touch.y
+
+  if (dragMode === 'move') {
+    el.x = dragStart.sx + (tx - dragStart.x)
+    el.y = dragStart.sy + (ty - dragStart.y)
+  } else if (dragMode === 'scale') {
+    const curDist = _dist(tx, ty, el.x, el.y)
+    const scale = curDist / dragStart.centerDist
+    el.fontSize = Math.max(20, Math.round(dragStart.snapshot.fontSize * scale))
+  } else if (dragMode === 'rotate') {
+    const curAngle = Math.atan2(ty - el.y, tx - el.x)
+    el.rotation = dragStart.snapshot.rotation + (curAngle - dragStart.angle)
   }
 
-  if (!stickerDragStart) return
-  const ds = stickerDragStart
-  activeSticker.value.x = ds.sx + (touch.x - ds.x)
-  activeSticker.value.y = ds.sy + (touch.y - ds.y)
   _renderPreview()
 }
 
 async function _confirmSticker() {
-  if (!activeSticker.value) {
+  if (stickerElements.value.length === 0) {
     _clearToolState()
     _drawCachedSnapshot()
     return
@@ -1034,7 +1173,6 @@ async function _confirmSticker() {
   try {
     const snapshot = currentSnapshot.value
     const ir = imageRect
-    const s = activeSticker.value
     const scaleX = snapshot.width / ir.w
     const scaleY = snapshot.height / ir.h
     const scale = Math.max(scaleX, scaleY)
@@ -1048,16 +1186,21 @@ async function _confirmSticker() {
     const img = await loadImage(canvas, snapshot.tempFilePath)
     ctx.drawImage(img, 0, 0, snapshot.width, snapshot.height)
 
-    ctx.save()
-    ctx.translate((s.x - ir.x) * scaleX, (s.y - ir.y) * scaleY)
-    ctx.rotate(s.rotation)
-    ctx.font = `${s.fontSize * scale}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(s.emoji, 0, 0)
-    ctx.restore()
+    stickerElements.value.forEach(s => {
+      ctx.save()
+      ctx.translate((s.x - ir.x) * scaleX, (s.y - ir.y) * scaleY)
+      ctx.rotate(s.rotation)
+      ctx.font = `${s.fontSize * scale}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(s.emoji, 0, 0)
+      ctx.restore()
+    })
 
     const newFilePath = await canvasToTempFilePath(canvas)
+    stickerElements.value = []
+    selectedId.value = null
+    selectedType.value = ''
     confirmEdit(newFilePath, snapshot.width, snapshot.height)
   } catch (err) {
     console.error('Confirm sticker failed:', err)
@@ -1082,111 +1225,185 @@ function onTextAdd() {
   }
   const ir = imageRect
   if (!ir) return
-  isEditing.value = true
-  activeText.value = {
+
+  // 如果当前选中了文字元素，更新它
+  if (selectedId.value && selectedType.value === 'text') {
+    const el = textElements.value.find(t => t.id === selectedId.value)
+    if (el) {
+      el.content = textInputContent.value.trim()
+      el.color = textColor.value
+      el.fontSize = textFontSize.value
+      _renderPreview()
+      return
+    }
+  }
+
+  // 否则添加新文字元素
+  const id = Date.now()
+  textElements.value.push({
+    id,
     content: textInputContent.value.trim(),
     x: ir.x + ir.w / 2,
     y: ir.y + ir.h / 2,
     fontSize: textFontSize.value,
     color: textColor.value,
     rotation: 0,
-  }
-  textDragStart = null
+  })
+  selectedId.value = id
+  selectedType.value = 'text'
   _renderPreview()
 }
 
-function _renderTextOverlay() {
-  if (!activeText.value) return
+function onTextColorChange(c) {
+  textColor.value = c
+  if (selectedId.value && selectedType.value === 'text') {
+    const el = textElements.value.find(t => t.id === selectedId.value)
+    if (el) { el.color = c; _renderPreview() }
+  }
+}
+
+function onTextSizeChange(s) {
+  textFontSize.value = s
+  if (selectedId.value && selectedType.value === 'text') {
+    const el = textElements.value.find(t => t.id === selectedId.value)
+    if (el) { el.fontSize = s; _renderPreview() }
+  }
+}
+
+function _getTextBounds(el) {
   const ctx = canvasCtx
-  const t = activeText.value
+  ctx.font = `bold ${el.fontSize}px -apple-system, "PingFang SC", sans-serif`
+  const textW = ctx.measureText(el.content).width
+  return { halfW: textW / 2 + 12, halfH: el.fontSize * 0.7 }
+}
 
-  ctx.save()
-  ctx.translate(t.x, t.y)
-  ctx.rotate(t.rotation)
+function _renderTextOverlay() {
+  const ctx = canvasCtx
+  let deleteBtnPos = null
 
-  ctx.font = `bold ${t.fontSize}px -apple-system, "PingFang SC", sans-serif`
-  ctx.fillStyle = t.color
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(t.content, 0, 0)
+  textElements.value.forEach(el => {
+    ctx.save()
+    ctx.translate(el.x, el.y)
+    ctx.rotate(el.rotation)
 
-  const textW = ctx.measureText(t.content).width
-  const halfW = textW / 2 + 10
-  const halfH = t.fontSize / 2 + 8
-  ctx.strokeStyle = '#4cd964'
-  ctx.lineWidth = 1
-  ctx.setLineDash([5, 5])
-  ctx.strokeRect(-halfW, -halfH, halfW * 2, halfH * 2)
-  ctx.setLineDash([])
+    ctx.font = `bold ${el.fontSize}px -apple-system, "PingFang SC", sans-serif`
+    ctx.fillStyle = el.color
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(el.content, 0, 0)
 
-  ctx.fillStyle = '#E63946'
-  ctx.beginPath()
-  ctx.arc(halfW, -halfH, 11, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#fff'
-  ctx.font = '13px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('×', halfW, -halfH)
+    if (selectedId.value === el.id && selectedType.value === 'text') {
+      const { halfW, halfH } = _getTextBounds(el)
+      _drawSelectionFrame(ctx, halfW, halfH)
+      deleteBtnPos = _getDeleteBtnWorldPos(el, halfW, halfH)
+    }
 
-  ctx.restore()
+    ctx.restore()
+  })
+
+  if (deleteBtnPos) {
+    _drawDeleteBtn(ctx, deleteBtnPos.x, deleteBtnPos.y)
+  }
 }
 
 function _textTouchStart(touch, e) {
-  if (!activeText.value) return
+  const tx = touch.x
+  const ty = touch.y
 
-  if (e && e.touches && e.touches.length === 2) {
-    const t0 = e.touches[0]
-    const t1 = e.touches[1]
-    textTwoFinger = {
-      dist: Math.sqrt((t1.x - t0.x) ** 2 + (t1.y - t0.y) ** 2),
-      angle: Math.atan2(t1.y - t0.y, t1.x - t0.x),
-      snapshot: { ...activeText.value }
+  if (selectedId.value && selectedType.value === 'text') {
+    const el = textElements.value.find(t => t.id === selectedId.value)
+    if (el) {
+      const { halfW, halfH } = _getTextBounds(el)
+      const pad = 12
+      const fw = halfW + pad
+      const fh = halfH + pad
+      const local = _hitToLocal(tx, ty, el)
+
+      const dp = _getDeleteBtnWorldPos(el, halfW, halfH)
+      if (_dist(tx, ty, dp.x, dp.y) <= 14) {
+        textElements.value = textElements.value.filter(t => t.id !== el.id)
+        selectedId.value = null
+        _renderPreview()
+        return
+      }
+
+      if (_dist(local.x, local.y, 0, -fh - 30) <= 14) {
+        dragMode = 'rotate'
+        dragStart = { angle: Math.atan2(ty - el.y, tx - el.x), snapshot: { ...el } }
+        return
+      }
+
+      const corners = [
+        { x: -fw, y: -fh }, { x: fw, y: -fh },
+        { x: -fw, y: fh },  { x: fw, y: fh },
+      ]
+      for (const c of corners) {
+        if (_dist(local.x, local.y, c.x, c.y) <= 12) {
+          dragMode = 'scale'
+          const centerDist = _dist(tx, ty, el.x, el.y)
+          dragStart = { centerDist, snapshot: { ...el } }
+          return
+        }
+      }
+
+      if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
+        dragMode = 'move'
+        dragStart = { x: tx, y: ty, sx: el.x, sy: el.y }
+        return
+      }
     }
-    return
   }
 
-  const t = activeText.value
-  const halfW = t.content.length * t.fontSize / 2 + 10
-  const halfH = t.fontSize / 2 + 8
+  for (let i = textElements.value.length - 1; i >= 0; i--) {
+    const el = textElements.value[i]
+    const { halfW, halfH } = _getTextBounds(el)
+    const pad = 12
+    const local = _hitToLocal(tx, ty, el)
+    if (Math.abs(local.x) <= halfW + pad && Math.abs(local.y) <= halfH + pad) {
+      selectedId.value = el.id
+      selectedType.value = 'text'
+      dragMode = 'move'
+      dragStart = { x: tx, y: ty, sx: el.x, sy: el.y }
+      textInputContent.value = el.content
+      textColor.value = el.color
+      textFontSize.value = el.fontSize
+      _renderPreview()
+      return
+    }
+  }
 
-  if (Math.sqrt((touch.x - (t.x + halfW)) ** 2 + (touch.y - (t.y - halfH)) ** 2) <= 15) {
-    activeText.value = null
+  if (selectedId.value && selectedType.value === 'text') {
+    selectedId.value = null
+    selectedType.value = ''
     _renderPreview()
-    return
-  }
-
-  if (Math.abs(touch.x - t.x) < halfW && Math.abs(touch.y - t.y) < halfH) {
-    textDragStart = { x: touch.x, y: touch.y, sx: t.x, sy: t.y }
   }
 }
 
 function _textTouchMove(touch, e) {
-  if (!activeText.value) return
+  if (!selectedId.value || selectedType.value !== 'text' || !dragStart) return
+  const el = textElements.value.find(t => t.id === selectedId.value)
+  if (!el) return
 
-  if (e && e.touches && e.touches.length === 2 && textTwoFinger) {
-    const t0 = e.touches[0]
-    const t1 = e.touches[1]
-    const dist = Math.sqrt((t1.x - t0.x) ** 2 + (t1.y - t0.y) ** 2)
-    const angle = Math.atan2(t1.y - t0.y, t1.x - t0.x)
-    const scale = dist / textTwoFinger.dist
-    const dAngle = angle - textTwoFinger.angle
-    const snap = textTwoFinger.snapshot
-    activeText.value.fontSize = Math.max(14, Math.round(snap.fontSize * scale))
-    activeText.value.rotation = (snap.rotation || 0) + dAngle
-    _renderPreview()
-    return
+  const tx = touch.x
+  const ty = touch.y
+
+  if (dragMode === 'move') {
+    el.x = dragStart.sx + (tx - dragStart.x)
+    el.y = dragStart.sy + (ty - dragStart.y)
+  } else if (dragMode === 'scale') {
+    const curDist = _dist(tx, ty, el.x, el.y)
+    const scale = curDist / dragStart.centerDist
+    el.fontSize = Math.max(14, Math.round(dragStart.snapshot.fontSize * scale))
+  } else if (dragMode === 'rotate') {
+    const curAngle = Math.atan2(ty - el.y, tx - el.x)
+    el.rotation = dragStart.snapshot.rotation + (curAngle - dragStart.angle)
   }
 
-  if (!textDragStart) return
-  const ds = textDragStart
-  activeText.value.x = ds.sx + (touch.x - ds.x)
-  activeText.value.y = ds.sy + (touch.y - ds.y)
   _renderPreview()
 }
 
 async function _confirmText() {
-  if (!activeText.value) {
+  if (textElements.value.length === 0) {
     _clearToolState()
     _drawCachedSnapshot()
     return
@@ -1195,7 +1412,6 @@ async function _confirmText() {
   try {
     const snapshot = currentSnapshot.value
     const ir = imageRect
-    const t = activeText.value
     const scaleX = snapshot.width / ir.w
     const scaleY = snapshot.height / ir.h
     const scale = Math.max(scaleX, scaleY)
@@ -1209,17 +1425,22 @@ async function _confirmText() {
     const img = await loadImage(canvas, snapshot.tempFilePath)
     ctx.drawImage(img, 0, 0, snapshot.width, snapshot.height)
 
-    ctx.save()
-    ctx.translate((t.x - ir.x) * scaleX, (t.y - ir.y) * scaleY)
-    ctx.rotate(t.rotation)
-    ctx.font = `bold ${t.fontSize * scale}px -apple-system, "PingFang SC", sans-serif`
-    ctx.fillStyle = t.color
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(t.content, 0, 0)
-    ctx.restore()
+    textElements.value.forEach(t => {
+      ctx.save()
+      ctx.translate((t.x - ir.x) * scaleX, (t.y - ir.y) * scaleY)
+      ctx.rotate(t.rotation)
+      ctx.font = `bold ${t.fontSize * scale}px -apple-system, "PingFang SC", sans-serif`
+      ctx.fillStyle = t.color
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(t.content, 0, 0)
+      ctx.restore()
+    })
 
     const newFilePath = await canvasToTempFilePath(canvas)
+    textElements.value = []
+    selectedId.value = null
+    selectedType.value = ''
     confirmEdit(newFilePath, snapshot.width, snapshot.height)
   } catch (err) {
     console.error('Confirm text failed:', err)
