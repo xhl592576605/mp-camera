@@ -1,33 +1,33 @@
 const MAP_KEY = ''
 
+/**
+ * 逆地理编码：经纬度 → 中文地址（高德地图 WebService API）
+ * 申请地址：https://lbs.amap.com/api/webservice/guide/api/georegeo
+ * @returns {{ address: string, coord: string }}
+ */
 export function reverseGeocode(latitude, longitude) {
+  const coord = `(${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
   if (!MAP_KEY) {
-    return Promise.resolve(formatCoord(latitude, longitude))
+    return Promise.resolve({ address: '', coord })
   }
   return new Promise((resolve) => {
     uni.request({
-      url: 'https://apis.map.qq.com/ws/geocoder/v1/',
+      url: 'https://restapi.amap.com/v3/geocode/regeo',
       data: {
-        location: `${latitude},${longitude}`,
+        location: `${longitude},${latitude}`,
         key: MAP_KEY,
-        get_poi: 0,
-        poi_options: 'address_format=short'
+        extensions: 'base',
       },
       success: (res) => {
-        if (res.data && res.data.status === 0) {
-          const comp = res.data.result.address_component
-          resolve(`${comp.province}${comp.city}${comp.district}`)
+        if (res.data && res.data.status === '1' && res.data.regeocode) {
+          resolve({ address: res.data.regeocode.formatted_address, coord })
         } else {
-          resolve(formatCoord(latitude, longitude))
+          resolve({ address: '', coord })
         }
       },
       fail: () => {
-        resolve(formatCoord(latitude, longitude))
-      }
+        resolve({ address: '', coord })
+      },
     })
   })
-}
-
-function formatCoord(lat, lng) {
-  return `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`
 }

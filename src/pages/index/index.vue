@@ -40,8 +40,10 @@
   <view class="top-bar">
     <view class="top-bar-inner">
       <view class="top-btn" @tap="onToggleFlash">
-        <view :class="['top-icon', flash !== 'off' ? 'top-icon--active' : '']">
+        <view :class="['top-icon', 'flash-icon', flash !== 'off' ? 'top-icon--active' : '']">
           <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.flash }}</text>
+          <text v-if="flash === 'auto'" class="flash-badge flash-badge--auto">A</text>
+          <text v-if="flash === 'off'" class="flash-badge flash-badge--off">×</text>
         </view>
       </view>
       <view class="top-btn" @tap="onToggleWatermark">
@@ -196,6 +198,35 @@ const {
 
 .top-icon--active {
   color: #FFD700;
+}
+
+.top-icon-label {
+  font-size: 18rpx;
+  color: #FFD700;
+  margin-top: 4rpx;
+}
+
+.flash-icon {
+  position: relative;
+}
+
+.flash-badge {
+  position: absolute;
+  bottom: -2rpx;
+  right: -8rpx;
+  font-size: 18rpx;
+  font-weight: 700;
+  font-family: -apple-system, sans-serif;
+  line-height: 1;
+}
+
+.flash-badge--auto {
+  color: #FFD700;
+}
+
+.flash-badge--off {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 22rpx;
 }
 
 /* 底部操作栏 */

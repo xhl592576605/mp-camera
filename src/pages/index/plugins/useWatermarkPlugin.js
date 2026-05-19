@@ -6,7 +6,7 @@ export function useWatermarkPlugin(context) {
   const currentTime = ref('')
   const currentDate = ref('')
   const currentWeekday = ref('')
-  const currentLocation = ref('')
+  const currentLocation = ref({ address: '', coord: '' })
 
   function updateTime() {
     const now = new Date()
@@ -26,7 +26,7 @@ export function useWatermarkPlugin(context) {
         context.renderWatermarkPreview?.()
       },
       fail: () => {
-        currentLocation.value = ''
+        currentLocation.value = { address: '', coord: '' }
         context.renderWatermarkPreview?.()
       },
     })

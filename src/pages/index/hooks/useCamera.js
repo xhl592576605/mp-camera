@@ -10,7 +10,7 @@ export function useCamera(options = {}) {
   const instance = vm ? vm.proxy : null
   const pluginDefs = options.plugins || createCameraPluginRegistry()
 
-  const flash = ref('off')
+  const flash = ref('auto')
   const devicePosition = ref('back')
   const isRecording = ref(false)
   const watermarkEnabled = ref(true)
@@ -20,7 +20,7 @@ export function useCamera(options = {}) {
   const currentTime = ref('')
   const currentDate = ref('')
   const currentWeekday = ref('')
-  const currentLocation = ref('')
+  const currentLocation = ref({ address: '', coord: '' })
   const showWatermarkModal = ref(false)
 
   let ctx = null
@@ -78,13 +78,13 @@ export function useCamera(options = {}) {
     uni.getLocation({
       type: 'gcj02',
       success: (res) => {
-        reverseGeocode(res.latitude, res.longitude).then((addr) => {
-          currentLocation.value = addr
+        reverseGeocode(res.latitude, res.longitude).then((loc) => {
+          currentLocation.value = loc
           _redrawDisplayCanvas()
         })
       },
       fail: () => {
-        currentLocation.value = ''
+        currentLocation.value = { address: '', coord: '' }
         _redrawDisplayCanvas()
       },
     })
@@ -125,13 +125,36 @@ export function useCamera(options = {}) {
     ctx2d.restore()
   }
 
+  function _wrapText(ctx2d, text, maxWidth) {
+    const lines = []
+    let line = ''
+    for (let i = 0; i < text.length; i++) {
+      const testLine = line + text[i]
+      if (ctx2d.measureText(testLine).width > maxWidth && line) {
+        lines.push(line)
+        line = text[i]
+      } else {
+        line = testLine
+      }
+    }
+    if (line) lines.push(line)
+    return lines
+  }
+
   function _calcWatermarkHeight(scale) {
     const rowGap = 5 * scale
     const badgeH = 22 * scale * 1.5 + 4 * scale * 2
     const timeH = 24 * scale * 1.5 + 2 * scale * 2
     let h = Math.max(badgeH, timeH) + rowGap
     h += 18 * scale * 1.5 + rowGap
-    if (currentLocation.value) h += 18 * scale * 1.5 + rowGap
+    const loc = currentLocation.value
+    if (loc && (loc.address || loc.coord)) {
+      const locFontSize = 18 * scale
+      const maxWidth = 686 * scale
+      const lines = _wrapText({ measureText: (t) => ({ width: t.length * locFontSize }) }, loc.address, maxWidth).length
+      h += (lines > 0 ? lines : 0) * (locFontSize * 1.5 + rowGap)
+      if (loc.coord) h += locFontSize * 1.5 + rowGap
+    }
     if (watermarkText.value) h += 5 * scale * 2 + 20 * scale * 1.5
     return h
   }
@@ -185,13 +208,25 @@ export function useCamera(options = {}) {
     ctx2d.fillText(`${currentDate.value} ${currentWeekday.value}`, x, curY)
     curY += dateFontSize * 1.5 + rowGap
 
-    if (currentLocation.value) {
+    if (currentLocation.value && (currentLocation.value.address || currentLocation.value.coord)) {
       const locFontSize = 18 * scale
+      const maxWidth = 686 * scale
       ctx2d.fillStyle = '#999999'
       ctx2d.font = `${locFontSize}px -apple-system, sans-serif`
       ctx2d.textBaseline = 'top'
-      ctx2d.fillText(currentLocation.value, x, curY)
-      curY += locFontSize * 1.5 + rowGap
+
+      if (currentLocation.value.address) {
+        const lines = _wrapText(ctx2d, currentLocation.value.address, maxWidth)
+        for (const line of lines) {
+          ctx2d.fillText(line, x, curY)
+          curY += locFontSize * 1.5 + rowGap
+        }
+      }
+
+      if (currentLocation.value.coord) {
+        ctx2d.fillText(currentLocation.value.coord, x, curY)
+        curY += locFontSize * 1.5 + rowGap
+      }
     }
 
     if (watermarkText.value) {
