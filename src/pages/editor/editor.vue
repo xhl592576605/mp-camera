@@ -3,7 +3,7 @@
     <!-- ===== 顶部栏 ===== -->
     <view class="top-bar">
       <view class="top-close" @tap="onCancel">
-        <text class="top-close-icon">✕</text>
+        <text class="iconfont top-close-icon">{{ ICON_GLYPHS.close }}</text>
       </view>
     </view>
 
@@ -21,27 +21,27 @@
 
     <!-- ===== 操作栏 ===== -->
     <view class="action-bar">
-      <view class="action-group" :class="{ 'is-hidden': isEditing && activeTool !== 'sticker' && activeTool !== 'text' }">
+      <view class="action-group" :class="{ 'is-hidden': isEditing }">
         <view class="action-btn" :style="{ opacity: canUndo ? 1 : 0.25 }" @tap="onUndo">
-          <text class="action-icon">↩</text>
+          <text class="iconfont action-icon">{{ ICON_GLYPHS.undo }}</text>
           <text class="action-label">撤销</text>
         </view>
         <view class="action-btn" :style="{ opacity: canRedo ? 1 : 0.25 }" @tap="onRedo">
-          <text class="action-icon">↪</text>
+          <text class="iconfont action-icon">{{ ICON_GLYPHS.redo }}</text>
           <text class="action-label">重做</text>
         </view>
         <view class="action-btn" @tap="onSave">
-          <text class="action-icon">💾</text>
+          <text class="iconfont action-icon">{{ ICON_GLYPHS.save }}</text>
           <text class="action-label">保存</text>
         </view>
       </view>
-      <view class="action-group" :class="{ 'is-hidden': !isEditing || activeTool === 'sticker' || activeTool === 'text' }">
+      <view class="action-group" :class="{ 'is-hidden': !isEditing }">
         <view class="action-btn action-btn-cancel" @tap="onCancelTool">
-          <text class="action-icon">✕</text>
+          <text class="iconfont action-icon">{{ ICON_GLYPHS.close }}</text>
           <text class="action-label">取消</text>
         </view>
         <view class="action-btn action-btn-confirm" @tap="onConfirmTool">
-          <text class="action-icon">✓</text>
+          <text class="iconfont action-icon">{{ ICON_GLYPHS.check }}</text>
           <text class="action-label">确认</text>
         </view>
       </view>
@@ -85,7 +85,6 @@
         @setWidth="drawPanelActions.setWidth"
       />
 
-      <!-- 贴纸面板 -->
       <StickerToolPanel
         v-if="activeTool === 'sticker'"
         :sticker-list="stickerPanelProps.stickerList"
@@ -117,6 +116,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import EditorToolbar from './components/EditorToolbar.vue'
 import RotateToolPanel from './components/RotateToolPanel.vue'
 import CropToolPanel from './components/CropToolPanel.vue'
@@ -124,6 +124,7 @@ import DrawToolPanel from './components/DrawToolPanel.vue'
 import StickerToolPanel from './components/StickerToolPanel.vue'
 import TextToolPanel from './components/TextToolPanel.vue'
 import { useEditor } from './hooks/useEditor'
+import { ICON_GLYPHS } from '../../constants/iconGlyphs'
 
 const editor = useEditor()
 
@@ -145,16 +146,16 @@ const {
   onCanvasTouchEnd,
 } = editor
 
-const rotatePanelProps = editor.getPluginPanelProps('rotate')
-const rotatePanelActions = editor.getPluginPanelActions('rotate')
-const cropPanelProps = editor.getPluginPanelProps('crop')
-const cropPanelActions = editor.getPluginPanelActions('crop')
-const drawPanelProps = editor.getPluginPanelProps('draw')
-const drawPanelActions = editor.getPluginPanelActions('draw')
-const stickerPanelProps = editor.getPluginPanelProps('sticker')
-const stickerPanelActions = editor.getPluginPanelActions('sticker')
-const textPanelProps = editor.getPluginPanelProps('text')
-const textPanelActions = editor.getPluginPanelActions('text')
+const rotatePanelProps = computed(() => editor.getPluginPanelProps('rotate'))
+const rotatePanelActions = computed(() => editor.getPluginPanelActions('rotate'))
+const cropPanelProps = computed(() => editor.getPluginPanelProps('crop'))
+const cropPanelActions = computed(() => editor.getPluginPanelActions('crop'))
+const drawPanelProps = computed(() => editor.getPluginPanelProps('draw'))
+const drawPanelActions = computed(() => editor.getPluginPanelActions('draw'))
+const stickerPanelProps = computed(() => editor.getPluginPanelProps('sticker'))
+const stickerPanelActions = computed(() => editor.getPluginPanelActions('sticker'))
+const textPanelProps = computed(() => editor.getPluginPanelProps('text'))
+const textPanelActions = computed(() => editor.getPluginPanelActions('text'))
 </script>
 
 <style scoped>
@@ -176,6 +177,8 @@ const textPanelActions = editor.getPluginPanelActions('text')
 
   width: 100vw;
   height: 100vh;
+  position: relative;
+  overflow: hidden;
   background-color: #000;
   display: flex;
   flex-direction: column;
@@ -188,6 +191,8 @@ const textPanelActions = editor.getPluginPanelActions('text')
 
 .top-bar {
   flex-shrink: 0;
+  position: relative;
+  z-index: 20;
   padding-top: calc(env(safe-area-inset-top) + 100rpx);
   padding-left: 32rpx;
   padding-right: 32rpx;
@@ -207,19 +212,23 @@ const textPanelActions = editor.getPluginPanelActions('text')
 
 .top-close-icon {
   color: var(--e-text);
-  font-size: 28rpx;
+  font-size: var(--icon-size-md);
 }
 
 /* ── Canvas 区域 ── */
 
 .canvas-area {
   flex: 1;
+  position: relative;
+  z-index: 1;
   overflow: hidden;
 }
 
 .editor-canvas {
   width: 100%;
   height: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── 操作栏 ── */
@@ -227,6 +236,7 @@ const textPanelActions = editor.getPluginPanelActions('text')
 .action-bar {
   flex-shrink: 0;
   position: relative;
+  z-index: 20;
   height: 100rpx;
   background: #000;
 }
@@ -264,7 +274,7 @@ const textPanelActions = editor.getPluginPanelActions('text')
 }
 
 .action-icon {
-  font-size: 32rpx;
+  font-size: var(--icon-size-md);
   color: var(--e-text);
 }
 
@@ -290,6 +300,8 @@ const textPanelActions = editor.getPluginPanelActions('text')
 
 .bottom-bar {
   flex-shrink: 0;
+  position: relative;
+  z-index: 20;
   background: var(--e-surface);
 }
 
@@ -347,16 +359,13 @@ const textPanelActions = editor.getPluginPanelActions('text')
 
 /* ── 子面板通用 ── */
 
-.sub-panel {
-  padding: 20rpx 32rpx 12rpx;
-}
-
 .panel-row {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 20rpx;
   margin-bottom: 12rpx;
+  padding: 0 32rpx;
 }
 
 .panel-row:last-child {
@@ -368,45 +377,6 @@ const textPanelActions = editor.getPluginPanelActions('text')
   color: rgba(250, 250, 250, 0.45);
   white-space: nowrap;
   min-width: 56rpx;
-}
-
-.panel-btn {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8rpx;
-  padding: 12rpx 28rpx;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
-  transition: background-color 150ms ease, transform 100ms ease;
-}
-
-.panel-btn:active {
-  transform: scale(0.95);
-}
-
-.panel-btn.is-selected {
-  background: rgba(230, 57, 70, 0.15);
-  border: 1rpx solid rgba(230, 57, 70, 0.4);
-}
-
-.panel-btn-primary {
-  background: #E63946;
-}
-
-.panel-btn-primary .panel-btn-text {
-  color: #fff;
-  font-weight: 600;
-}
-
-.panel-btn-icon {
-  font-size: 30rpx;
-  color: #FAFAFA;
-}
-
-.panel-btn-text {
-  font-size: 24rpx;
-  color: #FAFAFA;
 }
 
 /* ── 旋转面板 ── */
@@ -428,91 +398,14 @@ const textPanelActions = editor.getPluginPanelActions('text')
   margin: 0 8rpx;
 }
 
-/* ── 颜色选择 ── */
-
-.color-list {
-  display: flex;
-  flex-direction: row;
-  gap: 16rpx;
-}
-
-.color-swatch {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 50%;
-  border: 3rpx solid transparent;
-  transition: transform 200ms ease, border-color 200ms ease;
-}
-
-.color-swatch.is-selected {
-  border-color: #FAFAFA;
-  transform: scale(1.15);
-}
-
-/* ── 粗细选择 ── */
-
-.width-list {
-  display: flex;
-  flex-direction: row;
-  gap: 16rpx;
-}
-
-.width-swatch {
-  width: 60rpx;
-  height: 60rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 2rpx solid transparent;
-  transition: border-color 200ms ease;
-}
-
-.width-swatch.is-selected {
-  border-color: #FAFAFA;
-}
+/* ── 粗细圆点 ── */
 
 .width-dot {
   background: #FAFAFA;
   border-radius: 50%;
 }
 
-/* ── 贴纸面板 ── */
-
-.sticker-scroll {
-  width: 100%;
-  white-space: nowrap;
-}
-
-.sticker-list {
-  display: flex;
-  flex-direction: row;
-  gap: 12rpx;
-  padding: 4rpx 0;
-}
-
-.sticker-item {
-  width: 76rpx;
-  height: 76rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-  transition: transform 150ms ease, background-color 150ms ease;
-}
-
-.sticker-item:active {
-  transform: scale(0.9);
-  background: rgba(255, 255, 255, 0.10);
-}
-
-.sticker-emoji {
-  font-size: 40rpx;
-}
-
-/* ── 文字面板 ── */
+/* ── 文字输入 ── */
 
 .text-input {
   flex: 1;
@@ -524,13 +417,5 @@ const textPanelActions = editor.getPluginPanelActions('text')
   font-size: 26rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.08);
   box-sizing: border-box;
-}
-
-/* ── 尺寸选择 ── */
-
-.size-list {
-  display: flex;
-  flex-direction: row;
-  gap: 12rpx;
 }
 </style>

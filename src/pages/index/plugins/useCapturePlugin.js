@@ -19,9 +19,7 @@ export function useCapturePlugin(context) {
       }
     },
     onToggleFlash() {
-      const order = ['off', 'auto', 'on']
-      const index = order.indexOf(context.flash.value)
-      context.flash.value = order[(index + 1) % order.length]
+      context.flash.value = context.flash.value === 'torch' ? 'off' : 'torch'
     },
     onToggleCamera() {
       context.devicePosition.value = context.devicePosition.value === 'back' ? 'front' : 'back'

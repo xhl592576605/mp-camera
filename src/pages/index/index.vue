@@ -40,15 +40,19 @@
   <view class="top-bar">
     <view class="top-bar-inner">
       <view class="top-btn" @tap="onToggleFlash">
-        <view :class="['icon-flash', flash !== 'off' ? 'flash-active' : '']">
-          {{ flash === 'off' ? '⚡' : flash === 'auto' ? '⚡A' : '⚡' }}
+        <view :class="['top-icon', flash !== 'off' ? 'top-icon--active' : '']">
+          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.flash }}</text>
         </view>
       </view>
       <view class="top-btn" @tap="onToggleWatermark">
-        <view :class="['icon-watermark', watermarkEnabled ? 'watermark-active' : '']">💧</view>
+        <view :class="['top-icon', watermarkEnabled ? 'top-icon--active' : '']">
+          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.watermark }}</text>
+        </view>
       </view>
       <view v-if="watermarkEnabled" class="top-btn" @tap="onToggleCamera">
-        <view class="icon-switch">⇄</view>
+        <view class="top-icon">
+          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.cameraFlip }}</text>
+        </view>
       </view>
     </view>
   </view>
@@ -58,7 +62,7 @@
     <view class="bottom-bar-inner">
       <!-- 从相册选择 -->
       <view class="action-btn" @tap="onChooseFromAlbum">
-        <view class="action-icon">□</view>
+        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.album }}</text></view>
         <view class="action-label">从相册选择</view>
       </view>
       <!-- 拍摄按钮 -->
@@ -76,12 +80,12 @@
       </view>
       <!-- 自定义水印（水印开启时） -->
       <view v-if="watermarkEnabled" class="action-btn" @tap="onShowWatermarkModal">
-        <view class="action-icon">✦</view>
+        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.customWatermark }}</text></view>
         <view class="action-label">自定义水印</view>
       </view>
       <!-- 前后切换（水印关闭时） -->
       <view v-else class="action-btn" @tap="onToggleCamera">
-        <view class="action-icon">⇄</view>
+        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.cameraFlip }}</text></view>
         <view class="action-label">前后切换</view>
       </view>
     </view>
@@ -108,6 +112,7 @@
 
 <script setup>
 import { useCamera } from './hooks/useCamera'
+import { ICON_GLYPHS } from '../../constants/iconGlyphs'
 
 const {
   flash,
@@ -181,20 +186,16 @@ const {
   justify-content: center;
 }
 
-.icon-flash {
-  font-size: 44rpx;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1;
+.top-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 200ms ease;
 }
 
-.flash-active {
+.top-icon--active {
   color: #FFD700;
-}
-
-.icon-switch {
-  font-size: 40rpx;
-  color: #FFFFFF;
-  line-height: 1;
 }
 
 /* 底部操作栏 */
@@ -230,9 +231,7 @@ const {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-full);
-  font-size: 32rpx;
   color: #FFFFFF;
-  line-height: 1;
 }
 
 .action-label {
@@ -363,39 +362,28 @@ const {
   color: var(--color-text-primary);
 }
 
-/* 水印开关图标 */
-.icon-watermark {
-  font-size: 32rpx;
-  color: rgba(255, 255, 255, 0.4);
-  line-height: 1;
-}
-
-.watermark-active {
-  color: #FFD700;
-}
-
 /* 缩放按钮 */
 .zoom-bar {
   position: fixed;
-  bottom: calc(200rpx + 20rpx);
+  bottom: calc(200rpx + 48rpx);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 12rpx;
+  gap: 16rpx;
   z-index: 15;
 }
 
 .zoom-btn {
-  height: 56rpx;
-  min-width: 80rpx;
-  padding: 0 24rpx;
-  border-radius: 28rpx;
+  height: 64rpx;
+  min-width: 96rpx;
+  padding: 0 28rpx;
+  border-radius: 32rpx;
   background: rgba(0, 0, 0, 0.5);
   border: 2rpx solid rgba(255, 255, 255, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(4px);

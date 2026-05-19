@@ -9,11 +9,11 @@
     <!-- 底部操作 -->
     <view class="preview-actions safe-area-bottom">
       <view class="preview-btn btn-back" @tap="onRetake">
-        <view class="btn-icon">↩</view>
+        <view class="btn-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.undo }}</text></view>
         <view class="btn-text">重拍</view>
       </view>
       <view class="preview-btn btn-save" @tap="onSave">
-        <view class="btn-icon">↓</view>
+        <view class="btn-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.download }}</text></view>
         <view class="btn-text">保存到相册</view>
       </view>
     </view>
@@ -23,6 +23,7 @@
 <script setup>
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import { ICON_GLYPHS } from '../../constants/iconGlyphs'
 
 const type = ref('image')
 const src = ref('')
@@ -107,13 +108,12 @@ function onRetake() {
 }
 
 .btn-icon {
-  width: 88rpx;
-  height: 88rpx;
+  width: 96rpx;
+  height: 96rpx;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36rpx;
 }
 
 .btn-back .btn-icon {

@@ -13,6 +13,7 @@ export function useEditor(options = {}) {
       requestRender: () => renderPreview(),
       getActiveSnapshot: () => currentSnapshot.value,
       getImageRect: () => imageRect,
+      getSelection: () => ({ id: selectedId.value, type: selectedType.value }),
       setEditing: (value) => { isEditing.value = value },
       setSelection: ({ id, type }) => {
         selectedId.value = id
@@ -191,16 +192,11 @@ export function useEditor(options = {}) {
     if (activeTool.value === key) return
 
     if (isEditing.value && currentPlugin.value) {
-      const pluginState = currentPlugin.value.getPanelProps?.()
-      if ((activeTool.value === 'sticker' || activeTool.value === 'text') && pluginState?.elements?.length > 0) {
-        const result = await currentPlugin.value.commit?.()
-        if (result) {
-          snapshots.value = snapshots.value.slice(0, currentIndex.value + 1)
-          snapshots.value.push(result)
-          currentIndex.value = snapshots.value.length - 1
-          await _loadSnapshotImage()
-        }
-      }
+      currentPlugin.value.reset?.()
+      dragMode = ''
+      dragStart = null
+      selectedId.value = null
+      selectedType.value = ''
     }
 
     currentPlugin.value?.deactivate?.()
@@ -503,67 +499,101 @@ export function useEditor(options = {}) {
     return { halfW: halfSize, halfH: halfSize }
   }
 
-  function _drawSelectionFrame(ctx, halfW, halfH) {
-    const pad = 12
+  function _getControlMetrics(halfW, halfH) {
+    const pad = 14
     const fw = halfW + pad
     const fh = halfH + pad
+    const handleRadius = 13
+    return { fw, fh, handleRadius }
+  }
 
-    ctx.strokeStyle = '#4cd964'
-    ctx.lineWidth = 1.5
-    ctx.setLineDash([5, 5])
+  function _drawControlButton(ctx, x, y, kind) {
+    const isDelete = kind === 'delete'
+
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.28)'
+    ctx.shadowBlur = 10
+    ctx.fillStyle = isDelete ? '#FFFFFF' : '#FF5A66'
+    ctx.beginPath()
+    ctx.arc(0, 0, 13, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.strokeStyle = isDelete ? '#FF5A66' : '#FFFFFF'
+    ctx.fillStyle = isDelete ? '#FF5A66' : '#FFFFFF'
+    ctx.lineWidth = isDelete ? 2.8 : 2.4
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    if (kind === 'delete') {
+      ctx.beginPath()
+      ctx.moveTo(-4.8, -4.8)
+      ctx.lineTo(4.8, 4.8)
+      ctx.moveTo(4.8, -4.8)
+      ctx.lineTo(-4.8, 4.8)
+      ctx.stroke()
+    } else if (kind === 'flip') {
+      ctx.beginPath()
+      ctx.moveTo(0, -5)
+      ctx.lineTo(0, 5)
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.moveTo(-7, 0)
+      ctx.lineTo(-2, -4)
+      ctx.lineTo(-2, 4)
+      ctx.closePath()
+      ctx.fill()
+
+      ctx.beginPath()
+      ctx.moveTo(7, 0)
+      ctx.lineTo(2, -4)
+      ctx.lineTo(2, 4)
+      ctx.closePath()
+      ctx.fill()
+    } else if (kind === 'transform') {
+      ctx.beginPath()
+      ctx.arc(-0.6, 0.8, 5.6, Math.PI * 1.15, Math.PI * 0.15, false)
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.moveTo(4.8, -4.2)
+      ctx.lineTo(7.0, 0.4)
+      ctx.lineTo(2.4, -0.4)
+      ctx.stroke()
+    }
+
+    ctx.restore()
+  }
+
+  function _drawSelectionFrame(ctx, halfW, halfH, options = {}) {
+    const { fw, fh } = _getControlMetrics(halfW, halfH)
+    const { showFlip = false } = options
+
+    ctx.save()
+    ctx.strokeStyle = '#FFFFFF'
+    ctx.lineWidth = 2
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.26)'
+    ctx.shadowBlur = 10
     ctx.strokeRect(-fw, -fh, fw * 2, fh * 2)
-    ctx.setLineDash([])
 
-    const rotateOffset = 30
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.34)'
     ctx.lineWidth = 1
     ctx.beginPath()
+    ctx.moveTo(-fw, 0)
+    ctx.lineTo(fw, 0)
     ctx.moveTo(0, -fh)
-    ctx.lineTo(0, -fh - rotateOffset)
+    ctx.lineTo(0, fh)
     ctx.stroke()
 
-    ctx.fillStyle = '#007AFF'
-    ctx.beginPath()
-    ctx.arc(0, -fh - rotateOffset, 10, 0, Math.PI * 2)
-    ctx.fill()
-
-    const corners = [
-      { x: -fw, y: -fh }, { x: fw, y: -fh },
-      { x: -fw, y: fh },  { x: fw, y: fh },
-    ]
-    ctx.fillStyle = '#fff'
-    corners.forEach(c => {
-      ctx.beginPath()
-      ctx.arc(c.x, c.y, 5, 0, Math.PI * 2)
-      ctx.fill()
-    })
-  }
-
-  function _getDeleteBtnWorldPos(el, halfW, halfH) {
-    const pad = 12
-    const fw = halfW + pad
-    const fh = halfH + pad
-    const localX = fw
-    const localY = -fh - 16
-    const cos = Math.cos(el.rotation)
-    const sin = Math.sin(el.rotation)
-    return {
-      x: el.x + localX * cos - localY * sin,
-      y: el.y + localX * sin + localY * cos,
+    if (showFlip) {
+      _drawControlButton(ctx, -fw, -fh, 'flip')
     }
-  }
-
-  function _drawDeleteBtn(ctx, wx, wy) {
-    ctx.save()
-    ctx.fillStyle = '#E63946'
-    ctx.beginPath()
-    ctx.arc(wx, wy, 11, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.font = '13px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('×', wx, wy)
+    _drawControlButton(ctx, fw, -fh, 'delete')
+    _drawControlButton(ctx, fw, fh, 'transform')
     ctx.restore()
   }
 
@@ -579,32 +609,39 @@ export function useEditor(options = {}) {
     return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
   }
 
+  function _hitControl(local, x, y, radius = 16) {
+    return _dist(local.x, local.y, x, y) <= radius
+  }
+
+  function _drawStickerGlyph(ctx, el, fontSize) {
+    ctx.save()
+    if (el.flipX) {
+      ctx.scale(-1, 1)
+    }
+    ctx.font = `${fontSize}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(el.emoji, 0, 0)
+    ctx.restore()
+  }
+
   function _renderStickerOverlay(elements) {
     const ctx = canvasCtx
-    let deleteBtnPos = null
 
     elements.forEach(el => {
       ctx.save()
       ctx.translate(el.x, el.y)
       ctx.rotate(el.rotation)
 
-      ctx.font = `${el.fontSize}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(el.emoji, 0, 0)
+      _drawStickerGlyph(ctx, el, el.fontSize)
 
       if (selectedId.value === el.id && selectedType.value === 'sticker') {
         const { halfW, halfH } = _getStickerBounds(el)
-        _drawSelectionFrame(ctx, halfW, halfH)
-        deleteBtnPos = _getDeleteBtnWorldPos(el, halfW, halfH)
+        _drawSelectionFrame(ctx, halfW, halfH, { showFlip: true })
       }
 
       ctx.restore()
     })
-
-    if (deleteBtnPos) {
-      _drawDeleteBtn(ctx, deleteBtnPos.x, deleteBtnPos.y)
-    }
   }
 
   async function _exportSticker(elements) {
@@ -630,10 +667,7 @@ export function useEditor(options = {}) {
         ctx.save()
         ctx.translate((s.x - ir.x) * scaleX, (s.y - ir.y) * scaleY)
         ctx.rotate(s.rotation)
-        ctx.font = `${s.fontSize * scale}px sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(s.emoji, 0, 0)
+        _drawStickerGlyph(ctx, s, s.fontSize * scale)
         ctx.restore()
       })
 
@@ -657,13 +691,16 @@ export function useEditor(options = {}) {
       const el = elements.find(s => s.id === selectedId.value)
       if (el) {
         const { halfW, halfH } = _getStickerBounds(el)
-        const pad = 12
-        const fw = halfW + pad
-        const fh = halfH + pad
+        const { fw, fh, handleRadius } = _getControlMetrics(halfW, halfH)
         const local = _hitToLocal(tx, ty, el)
 
-        const dp = _getDeleteBtnWorldPos(el, halfW, halfH)
-        if (_dist(tx, ty, dp.x, dp.y) <= 14) {
+        if (_hitControl(local, -fw, -fh, handleRadius + 3)) {
+          el.flipX = !el.flipX
+          renderPreview()
+          return
+        }
+
+        if (_hitControl(local, fw, -fh, handleRadius + 3)) {
           const idx = elements.indexOf(el)
           if (idx >= 0) elements.splice(idx, 1)
           selectedId.value = null
@@ -671,23 +708,14 @@ export function useEditor(options = {}) {
           return
         }
 
-        if (_dist(local.x, local.y, 0, -fh - 30) <= 14) {
-          dragMode = 'rotate'
-          dragStart = { angle: Math.atan2(ty - el.y, tx - el.x), snapshot: { ...el } }
-          return
-        }
-
-        const corners = [
-          { x: -fw, y: -fh }, { x: fw, y: -fh },
-          { x: -fw, y: fh },  { x: fw, y: fh },
-        ]
-        for (const c of corners) {
-          if (_dist(local.x, local.y, c.x, c.y) <= 12) {
-            dragMode = 'scale'
-            const centerDist = _dist(tx, ty, el.x, el.y)
-            dragStart = { centerDist, snapshot: { ...el } }
-            return
+        if (_hitControl(local, fw, fh, handleRadius + 4)) {
+          dragMode = 'transform'
+          dragStart = {
+            centerDist: _dist(tx, ty, el.x, el.y),
+            angle: Math.atan2(ty - el.y, tx - el.x),
+            snapshot: { ...el },
           }
+          return
         }
 
         if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
@@ -701,9 +729,9 @@ export function useEditor(options = {}) {
     for (let i = elements.length - 1; i >= 0; i--) {
       const el = elements[i]
       const { halfW, halfH } = _getStickerBounds(el)
-      const pad = 12
+      const { fw, fh } = _getControlMetrics(halfW, halfH)
       const local = _hitToLocal(tx, ty, el)
-      if (Math.abs(local.x) <= halfW + pad && Math.abs(local.y) <= halfH + pad) {
+      if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
         selectedId.value = el.id
         selectedType.value = 'sticker'
         dragMode = 'move'
@@ -732,12 +760,11 @@ export function useEditor(options = {}) {
     if (dragMode === 'move') {
       el.x = dragStart.sx + (tx - dragStart.x)
       el.y = dragStart.sy + (ty - dragStart.y)
-    } else if (dragMode === 'scale') {
+    } else if (dragMode === 'transform') {
       const curDist = _dist(tx, ty, el.x, el.y)
       const scale = curDist / dragStart.centerDist
-      el.fontSize = Math.max(20, Math.round(dragStart.snapshot.fontSize * scale))
-    } else if (dragMode === 'rotate') {
       const curAngle = Math.atan2(ty - el.y, tx - el.x)
+      el.fontSize = Math.max(20, Math.round(dragStart.snapshot.fontSize * scale))
       el.rotation = dragStart.snapshot.rotation + (curAngle - dragStart.angle)
     }
 
@@ -755,7 +782,6 @@ export function useEditor(options = {}) {
 
   function _renderTextOverlay(elements) {
     const ctx = canvasCtx
-    let deleteBtnPos = null
 
     elements.forEach(el => {
       ctx.save()
@@ -771,15 +797,10 @@ export function useEditor(options = {}) {
       if (selectedId.value === el.id && selectedType.value === 'text') {
         const { halfW, halfH } = _getTextBounds(el)
         _drawSelectionFrame(ctx, halfW, halfH)
-        deleteBtnPos = _getDeleteBtnWorldPos(el, halfW, halfH)
       }
 
       ctx.restore()
     })
-
-    if (deleteBtnPos) {
-      _drawDeleteBtn(ctx, deleteBtnPos.x, deleteBtnPos.y)
-    }
   }
 
   async function _exportText(elements) {
@@ -833,13 +854,10 @@ export function useEditor(options = {}) {
       const el = elements.find(t => t.id === selectedId.value)
       if (el) {
         const { halfW, halfH } = _getTextBounds(el)
-        const pad = 12
-        const fw = halfW + pad
-        const fh = halfH + pad
+        const { fw, fh, handleRadius } = _getControlMetrics(halfW, halfH)
         const local = _hitToLocal(tx, ty, el)
 
-        const dp = _getDeleteBtnWorldPos(el, halfW, halfH)
-        if (_dist(tx, ty, dp.x, dp.y) <= 14) {
+        if (_hitControl(local, fw, -fh, handleRadius + 3)) {
           const idx = elements.indexOf(el)
           if (idx >= 0) elements.splice(idx, 1)
           selectedId.value = null
@@ -847,23 +865,14 @@ export function useEditor(options = {}) {
           return
         }
 
-        if (_dist(local.x, local.y, 0, -fh - 30) <= 14) {
-          dragMode = 'rotate'
-          dragStart = { angle: Math.atan2(ty - el.y, tx - el.x), snapshot: { ...el } }
-          return
-        }
-
-        const corners = [
-          { x: -fw, y: -fh }, { x: fw, y: -fh },
-          { x: -fw, y: fh },  { x: fw, y: fh },
-        ]
-        for (const c of corners) {
-          if (_dist(local.x, local.y, c.x, c.y) <= 12) {
-            dragMode = 'scale'
-            const centerDist = _dist(tx, ty, el.x, el.y)
-            dragStart = { centerDist, snapshot: { ...el } }
-            return
+        if (_hitControl(local, fw, fh, handleRadius + 4)) {
+          dragMode = 'transform'
+          dragStart = {
+            centerDist: _dist(tx, ty, el.x, el.y),
+            angle: Math.atan2(ty - el.y, tx - el.x),
+            snapshot: { ...el },
           }
+          return
         }
 
         if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
@@ -877,9 +886,9 @@ export function useEditor(options = {}) {
     for (let i = elements.length - 1; i >= 0; i--) {
       const el = elements[i]
       const { halfW, halfH } = _getTextBounds(el)
-      const pad = 12
+      const { fw, fh } = _getControlMetrics(halfW, halfH)
       const local = _hitToLocal(tx, ty, el)
-      if (Math.abs(local.x) <= halfW + pad && Math.abs(local.y) <= halfH + pad) {
+      if (Math.abs(local.x) <= fw && Math.abs(local.y) <= fh) {
         selectedId.value = el.id
         selectedType.value = 'text'
         dragMode = 'move'
@@ -908,12 +917,11 @@ export function useEditor(options = {}) {
     if (dragMode === 'move') {
       el.x = dragStart.sx + (tx - dragStart.x)
       el.y = dragStart.sy + (ty - dragStart.y)
-    } else if (dragMode === 'scale') {
+    } else if (dragMode === 'transform') {
       const curDist = _dist(tx, ty, el.x, el.y)
       const scale = curDist / dragStart.centerDist
-      el.fontSize = Math.max(14, Math.round(dragStart.snapshot.fontSize * scale))
-    } else if (dragMode === 'rotate') {
       const curAngle = Math.atan2(ty - el.y, tx - el.x)
+      el.fontSize = Math.max(14, Math.round(dragStart.snapshot.fontSize * scale))
       el.rotation = dragStart.snapshot.rotation + (curAngle - dragStart.angle)
     }
 

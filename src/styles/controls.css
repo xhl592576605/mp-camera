@@ -1,0 +1,129 @@
+/* ============================================================
+   共享控件样式
+   用于编辑器各子面板的色块、粗细、胶囊按钮等
+   ============================================================ */
+
+/* ── 颜色选择列表 ── */
+
+.color-list {
+  display: flex;
+  flex-direction: row;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.color-swatch {
+  width: var(--swatch-size, 56rpx);
+  height: var(--swatch-size, 56rpx);
+  border-radius: 50%;
+  border: 3rpx solid transparent;
+  transition: transform 200ms ease, border-color 200ms ease;
+}
+
+.color-swatch.is-selected {
+  border-color: #FAFAFA;
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3rpx rgba(230, 57, 70, 0.7), 0 0 18rpx rgba(230, 57, 70, 0.26);
+}
+
+/* 浅色色块添加内阴影，方便在暗背景上辨识 */
+.color-swatch--light {
+  box-shadow: inset 0 0 0 1rpx rgba(0, 0, 0, 0.12);
+}
+
+/* ── 粗细选择列表 ── */
+
+.width-list {
+  display: flex;
+  flex-direction: row;
+  gap: 16rpx;
+}
+
+.width-swatch {
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2rpx solid transparent;
+  transition: border-color 200ms ease;
+}
+
+.width-swatch.is-selected {
+  border-color: #FAFAFA;
+}
+
+.width-dot {
+  background: #FAFAFA;
+  border-radius: 50%;
+}
+
+/* ── 胶囊按钮列表 ── */
+
+.capsule-list {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.capsule-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx 28rpx;
+  border-radius: var(--control-radius, 32rpx);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid transparent;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.capsule-btn:active {
+  transform: scale(0.95);
+}
+
+.capsule-btn.is-selected {
+  background: rgba(230, 57, 70, 0.22);
+  border-color: rgba(230, 57, 70, 0.75);
+  box-shadow: inset 0 0 0 2rpx rgba(255, 255, 255, 0.08), 0 0 18rpx rgba(230, 57, 70, 0.18);
+}
+
+.capsule-btn.is-selected .capsule-btn-text {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.capsule-btn.is-selected .width-dot {
+  background: #FFFFFF;
+  box-shadow: 0 0 10rpx rgba(255, 255, 255, 0.32);
+}
+
+.capsule-btn--primary {
+  background: #E63946;
+}
+
+.capsule-btn--primary .capsule-btn-text {
+  color: #fff;
+  font-weight: 600;
+}
+
+.capsule-btn-icon {
+  font-size: 30rpx;
+  color: #FAFAFA;
+}
+
+.capsule-btn-text {
+  font-size: 24rpx;
+  color: #FAFAFA;
+  white-space: nowrap;
+}
+
+/* ── 尺寸选择列表 ── */
+
+.size-list {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+}

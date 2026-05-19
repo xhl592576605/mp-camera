@@ -38,10 +38,15 @@ export function useTextPlugin(context) {
       return context.exportText?.(elements.value)
     },
     getPanelProps() {
+      const selection = context.getSelection?.()
+      const activeElement = selection?.type === 'text'
+        ? elements.value.find(item => item.id === selection.id)
+        : null
+
       return {
         textInputContent: input.value,
-        textColor: color.value,
-        textFontSize: fontSize.value,
+        textColor: activeElement?.color ?? color.value,
+        textFontSize: activeElement?.fontSize ?? fontSize.value,
         textSizes: sizes,
         drawColors: ['#FFFFFF', '#000000', '#E63946', '#FFD166', '#4ECDC4'],
         elements: elements.value,
@@ -54,9 +59,25 @@ export function useTextPlugin(context) {
         },
         setColor(value) {
           color.value = value
+          const selection = context.getSelection?.()
+          if (selection?.type === 'text' && selection.id) {
+            const target = elements.value.find(item => item.id === selection.id)
+            if (target) {
+              target.color = value
+              context.requestRender?.()
+            }
+          }
         },
         setFontSize(value) {
-          fontSize.value = value
+          fontSize.value = Number(value)
+          const selection = context.getSelection?.()
+          if (selection?.type === 'text' && selection.id) {
+            const target = elements.value.find(item => item.id === selection.id)
+            if (target) {
+              target.fontSize = Number(value)
+              context.requestRender?.()
+            }
+          }
         },
         addText() {
           if (!input.value.trim()) return

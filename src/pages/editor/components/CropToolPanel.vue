@@ -3,10 +3,10 @@
     <view
       v-for="item in ratios"
       :key="item.key"
-      :class="['panel-btn', ratio === item.key ? 'is-selected' : '']"
+      :class="['capsule-btn', ratio === item.key ? 'is-selected' : '']"
       @tap="$emit('setRatio', item.key)"
     >
-      <text class="panel-btn-text">{{ item.label }}</text>
+      <text class="capsule-btn-text">{{ item.label }}</text>
     </view>
   </view>
 </template>

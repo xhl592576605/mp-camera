@@ -72,8 +72,14 @@ export function useDrawPlugin(context) {
     },
     getPanelActions() {
       return {
-        setColor: (value) => { color.value = value },
-        setWidth: (value) => { width.value = value },
+        setColor: (value) => {
+          color.value = value
+          context.requestRender?.()
+        },
+        setWidth: (value) => {
+          width.value = value
+          context.requestRender?.()
+        },
       }
     },
   }

@@ -115,9 +115,9 @@ export function useCamera(options = {}) {
     const ctx2d = _displayCtx
     ctx2d.clearRect(0, 0, _displayW, _displayH)
     if (!watermarkEnabled.value) return
-    const scale = _displayW / 750
+    const scale = (_displayW / 750) * 1.08
     const padLeft = 32 * scale
-    const padBottom = 80 * scale
+    const padBottom = 112 * scale
     const wmH = _calcWatermarkHeight(scale)
     ctx2d.save()
     ctx2d.translate(padLeft, _displayH - wmH - padBottom)

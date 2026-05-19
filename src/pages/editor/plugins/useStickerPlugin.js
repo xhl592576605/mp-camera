@@ -60,6 +60,7 @@ export function useStickerPlugin(context) {
             x: imageRect.x + imageRect.w / 2,
             y: imageRect.y + imageRect.h / 2,
             fontSize: 48,
+            flipX: false,
             rotation: 0,
           })
           context.setSelection?.({ id, type: 'sticker' })

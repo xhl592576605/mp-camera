@@ -6,7 +6,7 @@
       :class="['tool-item', activeTool === tool.key ? 'is-active' : '']"
       @tap="$emit('select', tool.key)"
     >
-      <text class="tool-icon">{{ tool.icon }}</text>
+      <text class="iconfont tool-icon">{{ tool.glyph }}</text>
       <text class="tool-label">{{ tool.label }}</text>
     </view>
   </view>

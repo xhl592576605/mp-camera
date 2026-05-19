@@ -13,6 +13,9 @@ export default {
 </script>
 
 <style>
+@import "./styles/iconfont.css";
+@import "./styles/controls.css";
+
 page {
   --color-bg-dark: #0A0A0B;
   --color-bg-glass: rgba(10, 10, 11, 0.75);
@@ -34,6 +37,21 @@ page {
 
   --font-display: -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
   --font-mono: "SF Mono", "Menlo", "Courier New", monospace;
+
+  /* 图标 */
+  --icon-size-sm: 32rpx;
+  --icon-size-md: 44rpx;
+  --icon-size-lg: 56rpx;
+
+  /* 控件 */
+  --control-radius: 24rpx;
+  --swatch-size: 36rpx;
+
+  /* 抽屉 */
+  --drawer-bg: rgba(18, 18, 20, 0.98);
+  --drawer-blur: blur(20px);
+  --drawer-height: 50vh;
+  --drawer-radius: 24rpx 24rpx 0 0;
 
   height: 100%;
   background-color: #000;
