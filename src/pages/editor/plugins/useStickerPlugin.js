@@ -1,19 +1,5 @@
 import { ref } from 'vue'
-
-const DEFAULT_STICKERS = [
-  { name: '星星', emoji: '⭐' },
-  { name: '爱心', emoji: '❤️' },
-  { name: '点赞', emoji: '👍' },
-  { name: '火焰', emoji: '🔥' },
-  { name: '庆祝', emoji: '🎉' },
-  { name: '太阳', emoji: '☀️' },
-  { name: '闪电', emoji: '⚡' },
-  { name: '奖章', emoji: '🏅' },
-  { name: '勾选', emoji: '✅' },
-  { name: '皇冠', emoji: '👑' },
-  { name: '钻石', emoji: '💎' },
-  { name: '气泡', emoji: '💬' },
-]
+import { STICKER_CATEGORIES } from '@/constants/stickerData'
 
 export function useStickerPlugin(context) {
   const elements = ref([])
@@ -45,7 +31,7 @@ export function useStickerPlugin(context) {
     },
     getPanelProps() {
       return {
-        stickerList: DEFAULT_STICKERS,
+        categories: STICKER_CATEGORIES,
         elements: elements.value,
       }
     },
@@ -54,15 +40,32 @@ export function useStickerPlugin(context) {
         addSticker(sticker) {
           const imageRect = context.getImageRect?.()
           const id = Date.now()
-          elements.value.push({
-            id,
-            emoji: sticker.emoji,
-            x: imageRect.x + imageRect.w / 2,
-            y: imageRect.y + imageRect.h / 2,
-            fontSize: 48,
-            flipX: false,
-            rotation: 0,
-          })
+
+          if (sticker.src) {
+            elements.value.push({
+              id,
+              type: 'image',
+              src: sticker.src,
+              x: imageRect.x + imageRect.w / 2,
+              y: imageRect.y + imageRect.h / 2,
+              width: 80,
+              height: 80,
+              flipX: false,
+              rotation: 0,
+            })
+          } else {
+            elements.value.push({
+              id,
+              type: 'emoji',
+              emoji: sticker.emoji,
+              x: imageRect.x + imageRect.w / 2,
+              y: imageRect.y + imageRect.h / 2,
+              fontSize: 48,
+              flipX: false,
+              rotation: 0,
+            })
+          }
+
           context.setSelection?.({ id, type: 'sticker' })
           context.requestRender?.()
         },

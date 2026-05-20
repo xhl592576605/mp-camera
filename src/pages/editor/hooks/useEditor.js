@@ -54,6 +54,7 @@ export function useEditor(options = {}) {
   let snapshotImage = null
   let dragMode = ''
   let dragStart = null
+  const stickerImageCache = new Map()
 
   const toolbarItems = computed(() =>
     pluginInstances
@@ -176,15 +177,23 @@ export function useEditor(options = {}) {
     return { x: (canvasWidth.value - w) / 2, y: (canvasHeight.value - h) / 2, w, h }
   }
 
-  function renderPreview() {
-    const rotateProps = activeTool.value === 'rotate' ? currentPlugin.value?.getPanelProps?.() : null
-    if (rotateProps && rotateProps.angle !== 0) {
-      currentPlugin.value?.renderPreview?.()
-    } else {
-      _drawCachedSnapshot()
-      if (activeTool.value !== 'rotate') {
-        currentPlugin.value?.renderPreview?.()
+  /**
+   * 重新渲染当前预览（异步，可能涉及图片贴纸加载）
+   * @returns {Promise<void>}
+   */
+  async function renderPreview() {
+    try {
+      const rotateProps = activeTool.value === 'rotate' ? currentPlugin.value?.getPanelProps?.() : null
+      if (rotateProps && rotateProps.angle !== 0) {
+        await currentPlugin.value?.renderPreview?.()
+      } else {
+        _drawCachedSnapshot()
+        if (activeTool.value !== 'rotate') {
+          await currentPlugin.value?.renderPreview?.()
+        }
       }
+    } catch (err) {
+      console.error('renderPreview failed:', err)
     }
   }
 
@@ -211,6 +220,7 @@ export function useEditor(options = {}) {
 
   function clearToolState() {
     currentPlugin.value?.reset?.()
+    stickerImageCache.clear()
     activeTool.value = ''
     isEditing.value = false
     selectedId.value = null
@@ -228,7 +238,7 @@ export function useEditor(options = {}) {
       await _loadSnapshotImage()
     }
     clearToolState()
-    _drawCachedSnapshot()
+    nextTick(() => _syncCanvasSize().then(() => _drawCachedSnapshot()))
   }
 
   function onCancelTool() {
@@ -262,6 +272,39 @@ export function useEditor(options = {}) {
         }
       },
     })
+  }
+
+  /**
+   * 将当前插件的 overlay 元素坐标从旧 imageRect 映射到新 imageRect
+   * @param {{ x:number, y:number, w:number, h:number }} oldRect
+   */
+  function _remapOverlayPositions(oldRect) {
+    const newRect = imageRect
+    if (!oldRect || !newRect || oldRect.w === 0) return
+    const scale = newRect.w / oldRect.w
+
+    const elements = currentPlugin.value?.getPanelProps?.()?.elements
+    if (!elements || elements.length === 0) return
+
+    elements.forEach(el => {
+      el.x = newRect.x + (el.x - oldRect.x) * scale
+      el.y = newRect.y + (el.y - oldRect.y) * scale
+      if (el.type === 'image') {
+        el.width *= scale
+        el.height *= scale
+      } else {
+        el.fontSize *= scale
+      }
+    })
+  }
+
+  function onStickerCollapseToggle() {
+    const oldRect = imageRect ? { ...imageRect } : null
+    nextTick(() => _syncCanvasSize().then(() => {
+      _drawCachedSnapshot()
+      _remapOverlayPositions(oldRect)
+      currentPlugin.value?.renderPreview?.()
+    }))
   }
 
   function onCancel() {
@@ -494,7 +537,11 @@ export function useEditor(options = {}) {
 
   // ── 贴纸渲染/导出/手势 ──
 
+  /** @param {{type?:string,fontSize?:number,width?:number,height?:number}} el @returns {{halfW:number,halfH:number}} */
   function _getStickerBounds(el) {
+    if (el.type === 'image') {
+      return { halfW: el.width / 2, halfH: el.height / 2 }
+    }
     const halfSize = el.fontSize * 0.75
     return { halfW: halfSize, halfH: halfSize }
   }
@@ -613,27 +660,50 @@ export function useEditor(options = {}) {
     return _dist(local.x, local.y, x, y) <= radius
   }
 
-  function _drawStickerGlyph(ctx, el, fontSize) {
+  /** @param {string} src - 图片贴纸路径 @returns {Promise<Image|null>} */
+  async function _loadStickerImage(src) {
+    if (stickerImageCache.has(src)) return stickerImageCache.get(src)
+    if (!canvasNode) return null
+    const img = await loadImage(canvasNode, src)
+    stickerImageCache.set(src, img)
+    return img
+  }
+
+  function _drawStickerGlyph(ctx, el, size) {
     ctx.save()
     if (el.flipX) {
       ctx.scale(-1, 1)
     }
-    ctx.font = `${fontSize}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(el.emoji, 0, 0)
+    if (el.type === 'image') {
+      const cached = stickerImageCache.get(el.src)
+      if (cached) {
+        const w = el.width || size
+        const h = el.height || size
+        ctx.drawImage(cached, -w / 2, -h / 2, w, h)
+      }
+    } else {
+      ctx.font = `${size}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(el.emoji, 0, 0)
+    }
     ctx.restore()
   }
 
-  function _renderStickerOverlay(elements) {
+  async function _renderStickerOverlay(elements) {
     const ctx = canvasCtx
+    const imageStickers = elements.filter(el => el.type === 'image' && !stickerImageCache.has(el.src))
+    if (imageStickers.length > 0) {
+      await Promise.all(imageStickers.map(el => _loadStickerImage(el.src)))
+    }
 
     elements.forEach(el => {
       ctx.save()
       ctx.translate(el.x, el.y)
       ctx.rotate(el.rotation)
 
-      _drawStickerGlyph(ctx, el, el.fontSize)
+      const size = el.type === 'image' ? Math.max(el.width, el.height) : el.fontSize
+      _drawStickerGlyph(ctx, el, size)
 
       if (selectedId.value === el.id && selectedType.value === 'sticker') {
         const { halfW, halfH } = _getStickerBounds(el)
@@ -663,13 +733,26 @@ export function useEditor(options = {}) {
       const img = await loadImage(canvas, snapshot.tempFilePath)
       ctx.drawImage(img, 0, 0, snapshot.width, snapshot.height)
 
-      elements.forEach(s => {
+      for (const s of elements) {
         ctx.save()
         ctx.translate((s.x - ir.x) * scaleX, (s.y - ir.y) * scaleY)
         ctx.rotate(s.rotation)
-        _drawStickerGlyph(ctx, s, s.fontSize * scale)
+
+        if (s.type === 'image') {
+          let stickerImg = stickerImageCache.get(s.src)
+          if (!stickerImg) {
+            stickerImg = await loadImage(canvas, s.src)
+            stickerImageCache.set(s.src, stickerImg)
+          }
+          const w = s.width * scale
+          const h = s.height * scale
+          ctx.drawImage(stickerImg, -w / 2, -h / 2, w, h)
+        } else {
+          _drawStickerGlyph(ctx, s, s.fontSize * scale)
+        }
+
         ctx.restore()
-      })
+      }
 
       const newFilePath = await canvasToTempFilePath(canvas)
       return { tempFilePath: newFilePath, width: snapshot.width, height: snapshot.height }
@@ -762,9 +845,14 @@ export function useEditor(options = {}) {
       el.y = dragStart.sy + (ty - dragStart.y)
     } else if (dragMode === 'transform') {
       const curDist = _dist(tx, ty, el.x, el.y)
-      const scale = curDist / dragStart.centerDist
+      const scaleFactor = curDist / dragStart.centerDist
       const curAngle = Math.atan2(ty - el.y, tx - el.x)
-      el.fontSize = Math.max(20, Math.round(dragStart.snapshot.fontSize * scale))
+      if (el.type === 'image') {
+        el.width = Math.max(20, Math.round(dragStart.snapshot.width * scaleFactor))
+        el.height = Math.max(20, Math.round(dragStart.snapshot.height * scaleFactor))
+      } else {
+        el.fontSize = Math.max(20, Math.round(dragStart.snapshot.fontSize * scaleFactor))
+      }
       el.rotation = dragStart.snapshot.rotation + (curAngle - dragStart.angle)
     }
 
@@ -959,6 +1047,7 @@ export function useEditor(options = {}) {
     onUndo,
     onRedo,
     onSave,
+    onStickerCollapseToggle,
     onCancel,
     onCanvasTouchStart,
     onCanvasTouchMove,

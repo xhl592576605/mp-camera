@@ -55,4 +55,40 @@ describe('useEditor', () => {
     expect(editor.onCancelTool).toEqual(expect.any(Function))
     expect(editor.onSave).toEqual(expect.any(Function))
   })
+
+  it('onConfirmTool 无 commit 结果时重置编辑状态', async () => {
+    const plugin = createPlugin('draw')
+    const editor = useEditor({
+      plugins: [plugin],
+      autoInit: false,
+    })
+
+    await editor.selectTool('draw')
+    await nextTick()
+    expect(editor.isEditing.value).toBe(true)
+
+    await editor.onConfirmTool()
+    await nextTick()
+
+    expect(editor.activeTool.value).toBe('')
+    expect(editor.isEditing.value).toBe(false)
+  })
+
+  it('onCancelTool 重置编辑状态', async () => {
+    const plugin = createPlugin('draw')
+    const editor = useEditor({
+      plugins: [plugin],
+      autoInit: false,
+    })
+
+    await editor.selectTool('draw')
+    await nextTick()
+    expect(editor.isEditing.value).toBe(true)
+
+    editor.onCancelTool()
+    await nextTick()
+
+    expect(editor.activeTool.value).toBe('')
+    expect(editor.isEditing.value).toBe(false)
+  })
 })

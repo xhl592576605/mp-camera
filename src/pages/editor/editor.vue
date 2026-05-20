@@ -48,7 +48,17 @@
     </view>
 
     <!-- ===== 工具栏 + 子面板 ===== -->
-    <view class="bottom-bar safe-area-bottom">
+    <!-- 贴纸抽屉（替代底部栏） -->
+    <view v-if="activeTool === 'sticker'" class="sticker-drawer-bar safe-area-bottom">
+      <StickerToolPanel
+        :categories="stickerPanelProps.categories"
+        @addSticker="stickerPanelActions.addSticker"
+        @collapseToggle="onStickerCollapseToggle"
+      />
+    </view>
+
+    <!-- 常规底部栏（非贴纸工具） -->
+    <view v-else class="bottom-bar safe-area-bottom">
       <EditorToolbar
         :items="toolbarItems"
         :active-tool="activeTool"
@@ -83,12 +93,6 @@
         :widths="drawPanelProps.widths"
         @setColor="drawPanelActions.setColor"
         @setWidth="drawPanelActions.setWidth"
-      />
-
-      <StickerToolPanel
-        v-if="activeTool === 'sticker'"
-        :sticker-list="stickerPanelProps.stickerList"
-        @addSticker="stickerPanelActions.addSticker"
       />
 
       <!-- 文字面板 -->
@@ -141,6 +145,7 @@ const {
   onRedo,
   onSave,
   onCancel,
+  onStickerCollapseToggle,
   onCanvasTouchStart,
   onCanvasTouchMove,
   onCanvasTouchEnd,
@@ -309,6 +314,12 @@ const textPanelActions = computed(() => editor.getPluginPanelActions('text'))
   height: 1rpx;
   background: var(--e-border);
   margin: 0 32rpx;
+}
+
+.sticker-drawer-bar {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
 }
 </style>
 
