@@ -6,7 +6,11 @@
         <view
           v-for="item in colors"
           :key="item"
-          :class="['color-swatch', color === item ? 'is-selected' : '', isLightColor(item) ? 'color-swatch--light' : '']"
+          :class="[
+            'color-swatch',
+            color === item ? 'is-selected' : '',
+            isLightColor(item) ? 'color-swatch--light' : '',
+          ]"
           :style="{ backgroundColor: item }"
           @tap="$emit('setColor', item)"
         ></view>
@@ -21,7 +25,10 @@
           :class="['capsule-btn', width === item ? 'is-selected' : '']"
           @tap="$emit('setWidth', item)"
         >
-          <view class="width-dot" :style="{ width: item * 2 + 'px', height: item * 2 + 'px' }"></view>
+          <view
+            class="width-dot"
+            :style="{ width: item * 2 + 'px', height: item * 2 + 'px' }"
+          ></view>
         </view>
       </view>
     </view>
@@ -40,18 +47,9 @@ defineProps({
     type: Array,
     default: () => [],
   },
-})
+});
 
-defineEmits(['setColor', 'setWidth'])
+defineEmits(["setColor", "setWidth"]);
 
-/** 判断颜色是否偏浅（用于暗背景上的色块辨识） */
-function isLightColor(hex) {
-  if (!hex || hex.charAt(0) !== '#') return false
-  const c = hex.replace('#', '')
-  if (c.length < 6) return false
-  const r = parseInt(c.substring(0, 2), 16)
-  const g = parseInt(c.substring(2, 4), 16)
-  const b = parseInt(c.substring(4, 6), 16)
-  return (r * 299 + g * 587 + b * 114) / 1000 > 180
-}
+import { isLightColor } from "@/utils/color";
 </script>

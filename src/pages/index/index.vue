@@ -4,25 +4,34 @@
     id="camera"
     :device-position="devicePosition"
     :flash="flash"
+    frame-size="large"
     mode="normal"
     @error="onCameraError"
     @initdone="onCameraInitDone"
-    style="width: 100vw; height: calc(100vh - 200rpx); position: fixed; top: 0; left: 0;"
+    style="
+      width: 100vw;
+      height: calc(100vh - 200rpx);
+      position: fixed;
+      top: 0;
+      left: 0;
+    "
   ></camera>
 
   <!-- 隐藏的 canvas，用于水印合成 -->
   <canvas
     type="2d"
     id="watermarkCanvas"
-    style="position: fixed; left: -9999px; top: -9999px; width: 1080px; height: 1920px;"
+    style="
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1080px;
+      height: 1920px;
+    "
   ></canvas>
 
   <!-- 实时水印 Canvas（可见，覆盖 camera 区域） -->
-  <canvas
-    type="2d"
-    id="displayCanvas"
-    class="display-canvas"
-  ></canvas>
+  <canvas type="2d" id="displayCanvas" class="display-canvas"></canvas>
 
   <!-- 缩放按钮 -->
   <view class="zoom-bar">
@@ -40,20 +49,36 @@
   <view class="top-bar">
     <view class="top-bar-inner">
       <view class="top-btn" @tap="onToggleFlash">
-        <view :class="['top-icon', 'flash-icon', flash !== 'off' ? 'top-icon--active' : '']">
-          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.flash }}</text>
-          <text v-if="flash === 'auto'" class="flash-badge flash-badge--auto">A</text>
-          <text v-if="flash === 'off'" class="flash-badge flash-badge--off">×</text>
+        <view
+          :class="[
+            'top-icon',
+            'flash-icon',
+            flash !== 'off' ? 'top-icon--active' : '',
+          ]"
+        >
+          <text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.flash
+          }}</text>
+          <text v-if="flash === 'auto'" class="flash-badge flash-badge--auto"
+            >A</text
+          >
+          <text v-if="flash === 'off'" class="flash-badge flash-badge--off"
+            >×</text
+          >
         </view>
       </view>
       <view class="top-btn" @tap="onToggleWatermark">
         <view :class="['top-icon', watermarkEnabled ? 'top-icon--active' : '']">
-          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.watermark }}</text>
+          <text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.watermark
+          }}</text>
         </view>
       </view>
       <view v-if="watermarkEnabled" class="top-btn" @tap="onToggleCamera">
         <view class="top-icon">
-          <text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.cameraFlip }}</text>
+          <text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.cameraFlip
+          }}</text>
         </view>
       </view>
     </view>
@@ -64,37 +89,63 @@
     <view class="bottom-bar-inner">
       <!-- 从相册选择 -->
       <view class="action-btn" @tap="onChooseFromAlbum">
-        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.album }}</text></view>
+        <view class="action-icon"
+          ><text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.album
+          }}</text></view
+        >
         <view class="action-label">从相册选择</view>
       </view>
       <!-- 拍摄按钮 -->
-      <view class="shutter-wrapper"
+      <view
+        class="shutter-wrapper"
         @touchstart="onShutterStart"
         @touchend="onShutterEnd"
         @touchcancel="onShutterEnd"
       >
-        <canvas type="2d" id="progressCanvas" v-if="isRecording"
+        <canvas
+          type="2d"
+          id="progressCanvas"
+          v-if="isRecording"
           class="progress-canvas"
         ></canvas>
         <view :class="['shutter-btn', isRecording ? 'shutter-recording' : '']">
-          <view :class="isRecording ? 'shutter-video-inner' : 'shutter-inner'"></view>
+          <view
+            :class="isRecording ? 'shutter-video-inner' : 'shutter-inner'"
+          ></view>
         </view>
       </view>
       <!-- 自定义水印（水印开启时） -->
-      <view v-if="watermarkEnabled" class="action-btn" @tap="onShowWatermarkModal">
-        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.customWatermark }}</text></view>
+      <view
+        v-if="watermarkEnabled"
+        class="action-btn"
+        @tap="onShowWatermarkModal"
+      >
+        <view class="action-icon"
+          ><text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.customWatermark
+          }}</text></view
+        >
         <view class="action-label">自定义水印</view>
       </view>
       <!-- 前后切换（水印关闭时） -->
       <view v-else class="action-btn" @tap="onToggleCamera">
-        <view class="action-icon"><text class="iconfont" style="font-size: var(--icon-size-md);">{{ ICON_GLYPHS.cameraFlip }}</text></view>
+        <view class="action-icon"
+          ><text class="iconfont" style="font-size: var(--icon-size-md)">{{
+            ICON_GLYPHS.cameraFlip
+          }}</text></view
+        >
         <view class="action-label">前后切换</view>
       </view>
     </view>
   </view>
 
   <!-- 自定义水印弹窗 -->
-  <view v-if="showWatermarkModal" class="modal-mask" @tap="onHideWatermarkModal">
+  <view
+    v-if="showWatermarkModal"
+    class="modal-mask"
+    @tap="onHideWatermarkModal"
+  >
     <view class="modal-content" @tap.stop="">
       <view class="modal-title">自定义水印</view>
       <input
@@ -105,16 +156,20 @@
         @confirm="onConfirmWatermark"
       />
       <view class="modal-actions">
-        <view class="modal-btn modal-btn-secondary" @tap="onClearWatermark">清除</view>
-        <view class="modal-btn modal-btn-primary" @tap="onConfirmWatermark">确认</view>
+        <view class="modal-btn modal-btn-secondary" @tap="onClearWatermark"
+          >清除</view
+        >
+        <view class="modal-btn modal-btn-primary" @tap="onConfirmWatermark"
+          >确认</view
+        >
       </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { useCamera } from './hooks/useCamera'
-import { ICON_GLYPHS } from '../../constants/iconGlyphs'
+import { useCamera } from "./hooks/useCamera";
+import { ICON_GLYPHS } from "../../constants/iconGlyphs";
 
 const {
   flash,
@@ -142,7 +197,7 @@ const {
   onToggleWatermark,
   onZoomChange,
   onCameraInitDone,
-} = useCamera()
+} = useCamera();
 </script>
 
 <style scoped>
@@ -197,12 +252,12 @@ const {
 }
 
 .top-icon--active {
-  color: #FFD700;
+  color: #ffd700;
 }
 
 .top-icon-label {
   font-size: 18rpx;
-  color: #FFD700;
+  color: #ffd700;
   margin-top: 4rpx;
 }
 
@@ -221,7 +276,7 @@ const {
 }
 
 .flash-badge--auto {
-  color: #FFD700;
+  color: #ffd700;
 }
 
 .flash-badge--off {
@@ -262,7 +317,7 @@ const {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-full);
-  color: #FFFFFF;
+  color: #ffffff;
 }
 
 .action-label {
@@ -283,7 +338,7 @@ const {
   width: 120rpx;
   height: 120rpx;
   border-radius: var(--radius-full);
-  border: 5rpx solid #FF0000;
+  border: 5rpx solid #ff0000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -297,18 +352,18 @@ const {
   width: 100rpx;
   height: 100rpx;
   border-radius: var(--radius-full);
-  background-color: #CC0000;
+  background-color: #cc0000;
 }
 
 .shutter-video-inner {
   width: 44rpx;
   height: 44rpx;
   border-radius: var(--radius-sm);
-  background-color: #CC0000;
+  background-color: #cc0000;
 }
 
 .shutter-recording {
-  border-color: #FF0000;
+  border-color: #ff0000;
 }
 
 /* Canvas 进度环 */
@@ -338,7 +393,7 @@ const {
 
 .modal-content {
   width: 580rpx;
-  background-color: #1C1C1E;
+  background-color: #1c1c1e;
   border-radius: var(--radius-lg);
   padding: 40rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.08);
@@ -422,7 +477,7 @@ const {
 
 .zoom-active {
   background: rgba(255, 255, 255, 0.2);
-  border-color: #FFD700;
-  color: #FFD700;
+  border-color: #ffd700;
+  color: #ffd700;
 }
 </style>

@@ -1,502 +1,555 @@
-import { ref, getCurrentInstance } from 'vue'
-import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { reverseGeocode } from '@/utils/location'
-import { createCameraPluginRegistry } from '../plugins'
+import { ref, getCurrentInstance } from "vue";
+import { onLoad, onUnload } from "@dcloudio/uni-app";
+import { reverseGeocode } from "@/utils/location";
 
-const MAX_RECORD_MS = 15000
+const MAX_RECORD_MS = 15000;
 
 export function useCamera(options = {}) {
-  const vm = getCurrentInstance()
-  const instance = vm ? vm.proxy : null
-  const pluginDefs = options.plugins || createCameraPluginRegistry()
+  const vm = getCurrentInstance();
+  const instance = vm ? vm.proxy : null;
 
-  const flash = ref('auto')
-  const devicePosition = ref('back')
-  const isRecording = ref(false)
-  const watermarkEnabled = ref(true)
-  const currentZoom = ref(1)
-  const maxZoom = ref(1)
-  const watermarkText = ref('')
-  const currentTime = ref('')
-  const currentDate = ref('')
-  const currentWeekday = ref('')
-  const currentLocation = ref({ address: '', coord: '' })
-  const showWatermarkModal = ref(false)
+  const flash = ref("auto");
+  const devicePosition = ref("back");
+  const isRecording = ref(false);
+  const watermarkEnabled = ref(true);
+  const currentZoom = ref(1);
+  const maxZoom = ref(1);
+  const watermarkText = ref("");
+  const currentTime = ref("");
+  const currentDate = ref("");
+  const currentWeekday = ref("");
+  const currentLocation = ref({ address: "", coord: "" });
+  const showWatermarkModal = ref(false);
 
-  let ctx = null
-  let _timer = null
-  let _longPressTimer = null
-  let _progressTimer = null
-  let _displayCtx = null
-  let _displayW = 0
-  let _displayH = 0
-  let _ringCanvas = null
-  let _ringCtx = null
-  let _ringDisplaySize = 0
-  let _recordStartMs = 0
-  let _inputValue = ''
-
-  const pluginMap = new Map(
-    pluginDefs.map(item => [item.key, item.create({
-      flash,
-      devicePosition,
-      isRecording,
-      startRecord: () => _startRecording(),
-      stopRecord: () => _stopRecording(),
-      takePhoto: () => _takePhoto(),
-      handlePickedMedia: (file) => _handlePickedMedia(file),
-      renderWatermarkPreview: () => _redrawDisplayCanvas(),
-    })])
-  )
+  let ctx = null;
+  let _timer = null;
+  let _longPressTimer = null;
+  let _progressTimer = null;
+  let _displayCtx = null;
+  let _displayW = 0;
+  let _displayH = 0;
+  let _ringCanvas = null;
+  let _ringCtx = null;
+  let _ringDisplaySize = 0;
+  let _recordStartMs = 0;
+  let _inputValue = "";
 
   if (options.autoInit !== false) {
     onLoad(() => {
-      ctx = uni.createCameraContext()
-      _updateTime()
-      _timer = setInterval(() => { _updateTime() }, 1000)
-      _updateLocation()
-      setTimeout(() => { _initDisplayCanvas() }, 100)
-    })
+      ctx = uni.createCameraContext();
+      _updateTime();
+      _timer = setInterval(() => {
+        _updateTime();
+      }, 1000);
+      _updateLocation();
+      setTimeout(() => {
+        _initDisplayCanvas();
+      }, 100);
+    });
 
     onUnload(() => {
-      if (_timer) clearInterval(_timer)
-      _clearTimers()
-    })
+      if (_timer) clearInterval(_timer);
+      _clearTimers();
+    });
   }
 
   function _updateTime() {
-    const now = new Date()
-    const pad = n => String(n).padStart(2, '0')
-    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-    currentTime.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-    currentDate.value = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`
-    currentWeekday.value = weekdays[now.getDay()]
-    _redrawDisplayCanvas()
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const weekdays = [
+      "星期日",
+      "星期一",
+      "星期二",
+      "星期三",
+      "星期四",
+      "星期五",
+      "星期六",
+    ];
+    currentTime.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    currentDate.value = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`;
+    currentWeekday.value = weekdays[now.getDay()];
+    _redrawDisplayCanvas();
   }
 
   function _updateLocation() {
     uni.getLocation({
-      type: 'gcj02',
+      type: "gcj02",
       success: (res) => {
         reverseGeocode(res.latitude, res.longitude).then((loc) => {
-          currentLocation.value = loc
-          _redrawDisplayCanvas()
-        })
+          currentLocation.value = loc;
+          _redrawDisplayCanvas();
+        });
       },
       fail: () => {
-        currentLocation.value = { address: '', coord: '' }
-        _redrawDisplayCanvas()
+        currentLocation.value = { address: "", coord: "" };
+        _redrawDisplayCanvas();
       },
-    })
+    });
   }
 
   function _initDisplayCanvas() {
-    if (!instance) return
-    const query = uni.createSelectorQuery().in(instance)
-    query.select('#displayCanvas')
+    if (!instance) return;
+    const query = uni.createSelectorQuery().in(instance);
+    query
+      .select("#displayCanvas")
       .fields({ node: true, size: true })
       .exec((res) => {
-        if (!res[0]) return
-        const canvas = res[0].node
-        const dpr = (uni.getWindowInfo ? uni.getWindowInfo().pixelRatio : uni.getSystemInfoSync().pixelRatio) || 2
-        canvas.width = res[0].width * dpr
-        canvas.height = res[0].height * dpr
-        const ctx2d = canvas.getContext('2d')
-        ctx2d.scale(dpr, dpr)
-        _displayCtx = ctx2d
-        _displayW = res[0].width
-        _displayH = res[0].height
-        _redrawDisplayCanvas()
-      })
+        if (!res[0]) return;
+        const canvas = res[0].node;
+        const dpr =
+          (uni.getWindowInfo
+            ? uni.getWindowInfo().pixelRatio
+            : uni.getSystemInfoSync().pixelRatio) || 2;
+        canvas.width = res[0].width * dpr;
+        canvas.height = res[0].height * dpr;
+        const ctx2d = canvas.getContext("2d");
+        ctx2d.scale(dpr, dpr);
+        _displayCtx = ctx2d;
+        _displayW = res[0].width;
+        _displayH = res[0].height;
+        _redrawDisplayCanvas();
+      });
   }
 
   function _redrawDisplayCanvas() {
-    if (!_displayCtx) return
-    const ctx2d = _displayCtx
-    ctx2d.clearRect(0, 0, _displayW, _displayH)
-    if (!watermarkEnabled.value) return
-    const scale = (_displayW / 750) * 1.08
-    const padLeft = 32 * scale
-    const padBottom = 112 * scale
-    const wmH = _calcWatermarkHeight(scale)
-    ctx2d.save()
-    ctx2d.translate(padLeft, _displayH - wmH - padBottom)
-    _drawWatermark(ctx2d, scale)
-    ctx2d.restore()
+    if (!_displayCtx) return;
+    const ctx2d = _displayCtx;
+    ctx2d.clearRect(0, 0, _displayW, _displayH);
+    if (!watermarkEnabled.value) return;
+    const scale = (_displayW / 750) * 1.08;
+    const padLeft = 32 * scale;
+    const padBottom = 112 * scale;
+    const wmH = _calcWatermarkHeight(scale);
+    ctx2d.save();
+    ctx2d.translate(padLeft, _displayH - wmH - padBottom);
+    _drawWatermark(ctx2d, scale);
+    ctx2d.restore();
   }
 
   function _wrapText(ctx2d, text, maxWidth) {
-    const lines = []
-    let line = ''
+    const lines = [];
+    let line = "";
     for (let i = 0; i < text.length; i++) {
-      const testLine = line + text[i]
+      const testLine = line + text[i];
       if (ctx2d.measureText(testLine).width > maxWidth && line) {
-        lines.push(line)
-        line = text[i]
+        lines.push(line);
+        line = text[i];
       } else {
-        line = testLine
+        line = testLine;
       }
     }
-    if (line) lines.push(line)
-    return lines
+    if (line) lines.push(line);
+    return lines;
   }
 
   function _calcWatermarkHeight(scale) {
-    const rowGap = 5 * scale
-    const badgeH = 22 * scale * 1.5 + 4 * scale * 2
-    const timeH = 24 * scale * 1.5 + 2 * scale * 2
-    let h = Math.max(badgeH, timeH) + rowGap
-    h += 18 * scale * 1.5 + rowGap
-    const loc = currentLocation.value
+    const rowGap = 5 * scale;
+    const badgeH = 22 * scale * 1.5 + 4 * scale * 2;
+    const timeH = 24 * scale * 1.5 + 2 * scale * 2;
+    let h = Math.max(badgeH, timeH) + rowGap;
+    h += 18 * scale * 1.5 + rowGap;
+    const loc = currentLocation.value;
     if (loc && (loc.address || loc.coord)) {
-      const locFontSize = 18 * scale
-      const maxWidth = 686 * scale
-      const lines = _wrapText({ measureText: (t) => ({ width: t.length * locFontSize }) }, loc.address, maxWidth).length
-      h += (lines > 0 ? lines : 0) * (locFontSize * 1.5 + rowGap)
-      if (loc.coord) h += locFontSize * 1.5 + rowGap
+      const locFontSize = 18 * scale;
+      const maxWidth = 686 * scale;
+      const lines = _wrapText(
+        { measureText: (t) => ({ width: t.length * locFontSize }) },
+        loc.address,
+        maxWidth
+      ).length;
+      h += (lines > 0 ? lines : 0) * (locFontSize * 1.5 + rowGap);
+      if (loc.coord) h += locFontSize * 1.5 + rowGap;
     }
-    if (watermarkText.value) h += 5 * scale * 2 + 20 * scale * 1.5
-    return h
+    if (watermarkText.value) h += 5 * scale * 2 + 20 * scale * 1.5;
+    return h;
   }
 
   function _drawWatermark(ctx2d, scale) {
-    let curY = 0
-    const x = 0
-    const rowGap = 5 * scale
-    const innerGap = 10 * scale
+    let curY = 0;
+    const x = 0;
+    const rowGap = 5 * scale;
+    const innerGap = 10 * scale;
 
-    const badgeFontSize = 22 * scale
-    ctx2d.font = `bold ${badgeFontSize}px -apple-system, sans-serif`
-    const badgeTextWidth = ctx2d.measureText('打卡').width
-    const badgePadX = 14 * scale
-    const badgePadY = 4 * scale
-    const badgeW = badgeTextWidth + badgePadX * 2
-    const badgeH = badgeFontSize * 1.5 + badgePadY * 2
-    const badgeR = 8 * scale
+    const badgeFontSize = 22 * scale;
+    ctx2d.font = `bold ${badgeFontSize}px -apple-system, sans-serif`;
+    const badgeTextWidth = ctx2d.measureText("打卡").width;
+    const badgePadX = 14 * scale;
+    const badgePadY = 4 * scale;
+    const badgeW = badgeTextWidth + badgePadX * 2;
+    const badgeH = badgeFontSize * 1.5 + badgePadY * 2;
+    const badgeR = 8 * scale;
 
-    ctx2d.fillStyle = '#FFD700'
-    _roundRect(ctx2d, x, curY, badgeW, badgeH, badgeR)
-    ctx2d.fill()
-    ctx2d.fillStyle = '#FFFFFF'
-    ctx2d.textBaseline = 'middle'
-    ctx2d.fillText('打卡', x + badgePadX, curY + badgeH / 2)
+    ctx2d.fillStyle = "#FFD700";
+    _roundRect(ctx2d, x, curY, badgeW, badgeH, badgeR);
+    ctx2d.fill();
+    ctx2d.fillStyle = "#FFFFFF";
+    ctx2d.textBaseline = "middle";
+    ctx2d.fillText("打卡", x + badgePadX, curY + badgeH / 2);
 
-    const timeFontSize = 24 * scale
-    const timeText = currentTime.value
-    ctx2d.font = `500 ${timeFontSize}px "SF Mono", Menlo, monospace`
-    const timeTextWidth = ctx2d.measureText(timeText).width
-    const timePadX = 14 * scale
-    const timePadY = 2 * scale
-    const timeW = timeTextWidth + timePadX * 2
-    const timeH = timeFontSize * 1.5 + timePadY * 2
-    const timeR = 4 * scale
-    const timeX = x + badgeW + innerGap
+    const timeFontSize = 24 * scale;
+    const timeText = currentTime.value;
+    ctx2d.font = `500 ${timeFontSize}px "SF Mono", Menlo, monospace`;
+    const timeTextWidth = ctx2d.measureText(timeText).width;
+    const timePadX = 14 * scale;
+    const timePadY = 2 * scale;
+    const timeW = timeTextWidth + timePadX * 2;
+    const timeH = timeFontSize * 1.5 + timePadY * 2;
+    const timeR = 4 * scale;
+    const timeX = x + badgeW + innerGap;
 
-    ctx2d.fillStyle = '#FFFFFF'
-    _roundRect(ctx2d, timeX, curY, timeW, timeH, timeR)
-    ctx2d.fill()
-    ctx2d.fillStyle = '#000000'
-    ctx2d.textBaseline = 'middle'
-    ctx2d.fillText(timeText, timeX + timePadX, curY + timeH / 2)
+    ctx2d.fillStyle = "#FFFFFF";
+    _roundRect(ctx2d, timeX, curY, timeW, timeH, timeR);
+    ctx2d.fill();
+    ctx2d.fillStyle = "#000000";
+    ctx2d.textBaseline = "middle";
+    ctx2d.fillText(timeText, timeX + timePadX, curY + timeH / 2);
 
-    curY += Math.max(badgeH, timeH) + rowGap
+    curY += Math.max(badgeH, timeH) + rowGap;
 
-    const dateFontSize = 18 * scale
-    ctx2d.fillStyle = '#999999'
-    ctx2d.font = `${dateFontSize}px -apple-system, sans-serif`
-    ctx2d.textBaseline = 'top'
-    ctx2d.fillText(`${currentDate.value} ${currentWeekday.value}`, x, curY)
-    curY += dateFontSize * 1.5 + rowGap
+    const dateFontSize = 18 * scale;
+    ctx2d.fillStyle = "#999999";
+    ctx2d.font = `${dateFontSize}px -apple-system, sans-serif`;
+    ctx2d.textBaseline = "top";
+    ctx2d.fillText(`${currentDate.value} ${currentWeekday.value}`, x, curY);
+    curY += dateFontSize * 1.5 + rowGap;
 
-    if (currentLocation.value && (currentLocation.value.address || currentLocation.value.coord)) {
-      const locFontSize = 18 * scale
-      const maxWidth = 686 * scale
-      ctx2d.fillStyle = '#999999'
-      ctx2d.font = `${locFontSize}px -apple-system, sans-serif`
-      ctx2d.textBaseline = 'top'
+    if (
+      currentLocation.value &&
+      (currentLocation.value.address || currentLocation.value.coord)
+    ) {
+      const locFontSize = 18 * scale;
+      const maxWidth = 686 * scale;
+      ctx2d.fillStyle = "#999999";
+      ctx2d.font = `${locFontSize}px -apple-system, sans-serif`;
+      ctx2d.textBaseline = "top";
 
       if (currentLocation.value.address) {
-        const lines = _wrapText(ctx2d, currentLocation.value.address, maxWidth)
+        const lines = _wrapText(ctx2d, currentLocation.value.address, maxWidth);
         for (const line of lines) {
-          ctx2d.fillText(line, x, curY)
-          curY += locFontSize * 1.5 + rowGap
+          ctx2d.fillText(line, x, curY);
+          curY += locFontSize * 1.5 + rowGap;
         }
       }
 
       if (currentLocation.value.coord) {
-        ctx2d.fillText(currentLocation.value.coord, x, curY)
-        curY += locFontSize * 1.5 + rowGap
+        ctx2d.fillText(currentLocation.value.coord, x, curY);
+        curY += locFontSize * 1.5 + rowGap;
       }
     }
 
     if (watermarkText.value) {
-      const customFontSize = 20 * scale
-      const lineGap = 5 * scale
-      curY += lineGap
-      ctx2d.strokeStyle = 'rgba(255, 255, 255, 0.15)'
-      ctx2d.lineWidth = 1 * scale
-      ctx2d.beginPath()
-      ctx2d.moveTo(x, curY)
-      ctx2d.lineTo(x + 300 * scale, curY)
-      ctx2d.stroke()
-      curY += lineGap
+      const customFontSize = 20 * scale;
+      const lineGap = 5 * scale;
+      curY += lineGap;
+      ctx2d.strokeStyle = "rgba(255, 255, 255, 0.15)";
+      ctx2d.lineWidth = 1 * scale;
+      ctx2d.beginPath();
+      ctx2d.moveTo(x, curY);
+      ctx2d.lineTo(x + 300 * scale, curY);
+      ctx2d.stroke();
+      curY += lineGap;
 
-      ctx2d.fillStyle = '#FFFFFF'
-      ctx2d.font = `${customFontSize}px -apple-system, sans-serif`
-      ctx2d.textBaseline = 'top'
-      ctx2d.fillText(watermarkText.value, x, curY)
+      ctx2d.fillStyle = "#FFFFFF";
+      ctx2d.font = `${customFontSize}px -apple-system, sans-serif`;
+      ctx2d.textBaseline = "top";
+      ctx2d.fillText(watermarkText.value, x, curY);
     }
   }
 
   function _roundRect(ctx2d, x, y, w, h, r) {
-    ctx2d.beginPath()
-    ctx2d.moveTo(x + r, y)
-    ctx2d.lineTo(x + w - r, y)
-    ctx2d.arcTo(x + w, y, x + w, y + r, r)
-    ctx2d.lineTo(x + w, y + h - r)
-    ctx2d.arcTo(x + w, y + h, x + w - r, y + h, r)
-    ctx2d.lineTo(x + r, y + h)
-    ctx2d.arcTo(x, y + h, x, y + h - r, r)
-    ctx2d.lineTo(x, y + r)
-    ctx2d.arcTo(x, y, x + r, y, r)
-    ctx2d.closePath()
+    ctx2d.beginPath();
+    ctx2d.moveTo(x + r, y);
+    ctx2d.lineTo(x + w - r, y);
+    ctx2d.arcTo(x + w, y, x + w, y + r, r);
+    ctx2d.lineTo(x + w, y + h - r);
+    ctx2d.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx2d.lineTo(x + r, y + h);
+    ctx2d.arcTo(x, y + h, x, y + h - r, r);
+    ctx2d.lineTo(x, y + r);
+    ctx2d.arcTo(x, y, x + r, y, r);
+    ctx2d.closePath();
   }
 
   function _takePhoto() {
-    if (!ctx) return
+    if (!ctx) return;
     ctx.takePhoto({
-      quality: 'high',
+      quality: "original",
       success: (res) => {
-        _composeWatermark(res.tempImagePath)
+        _composeWatermark(res.tempImagePath);
       },
       fail: () => {
-        uni.showToast({ title: '拍照失败', icon: 'none' })
+        uni.showToast({ title: "拍照失败", icon: "none" });
       },
-    })
+    });
   }
 
   function _startRecording() {
-    if (!ctx) return
-    isRecording.value = true
-    _recordStartMs = Date.now()
-    _ringCtx = null
+    isRecording.value = true;
+    if (!ctx) return;
+    _recordStartMs = Date.now();
+    _ringCtx = null;
     ctx.startRecord({
       fail: () => {
-        isRecording.value = false
-        uni.showToast({ title: '录像启动失败', icon: 'none' })
+        isRecording.value = false;
+        uni.showToast({ title: "录像启动失败", icon: "none" });
       },
-    })
-    setTimeout(() => { _initProgressCanvas() }, 50)
+    });
+    setTimeout(() => {
+      _initProgressCanvas();
+    }, 50);
     _progressTimer = setInterval(() => {
-      const elapsed = Date.now() - _recordStartMs
-      const ratio = Math.min(elapsed / MAX_RECORD_MS, 1)
-      const deg = Math.round(ratio * 360)
-      _drawProgressRing(deg)
-      if (ratio >= 1) { _stopRecording() }
-    }, 100)
+      const elapsed = Date.now() - _recordStartMs;
+      const ratio = Math.min(elapsed / MAX_RECORD_MS, 1);
+      const deg = Math.round(ratio * 360);
+      _drawProgressRing(deg);
+      if (ratio >= 1) {
+        _stopRecording();
+      }
+    }, 100);
   }
 
   function _stopRecording() {
-    if (!ctx) return
-    _clearTimers()
-    _ringCtx = null
+    isRecording.value = false;
+    _clearTimers();
+    _ringCtx = null;
+    if (!ctx) return;
     ctx.stopRecord({
       success: (res) => {
-        isRecording.value = false
         uni.navigateTo({
           url: `/pages/preview/preview?type=video&thumbSrc=${encodeURIComponent(res.tempThumbPath)}&src=${encodeURIComponent(res.tempVideoPath)}`,
-        })
+        });
       },
       fail: () => {
-        isRecording.value = false
-        uni.showToast({ title: '录像停止失败', icon: 'none' })
+        uni.showToast({ title: "录像停止失败", icon: "none" });
       },
-    })
+    });
   }
 
   function _initProgressCanvas() {
-    if (!instance) return
-    const query = uni.createSelectorQuery().in(instance)
-    query.select('#progressCanvas')
+    if (!instance) return;
+    const query = uni.createSelectorQuery().in(instance);
+    query
+      .select("#progressCanvas")
       .fields({ node: true, size: true })
       .exec((res) => {
-        if (!res[0]) return
-        const canvas = res[0].node
-        const dpr = (uni.getWindowInfo ? uni.getWindowInfo().pixelRatio : uni.getSystemInfoSync().pixelRatio) || 2
-        canvas.width = res[0].width * dpr
-        canvas.height = res[0].height * dpr
-        _ringCanvas = canvas
-        _ringCtx = canvas.getContext('2d')
-        _ringCtx.scale(dpr, dpr)
-        _ringDisplaySize = res[0].width
-      })
+        if (!res[0]) return;
+        const canvas = res[0].node;
+        const dpr =
+          (uni.getWindowInfo
+            ? uni.getWindowInfo().pixelRatio
+            : uni.getSystemInfoSync().pixelRatio) || 2;
+        canvas.width = res[0].width * dpr;
+        canvas.height = res[0].height * dpr;
+        _ringCanvas = canvas;
+        _ringCtx = canvas.getContext("2d");
+        _ringCtx.scale(dpr, dpr);
+        _ringDisplaySize = res[0].width;
+      });
   }
 
   function _drawProgressRing(deg) {
-    if (!_ringCtx) return
-    const ctx2d = _ringCtx
-    const size = _ringDisplaySize || 76
-    const center = size / 2
-    const radius = center - 4
+    if (!_ringCtx) return;
+    const ctx2d = _ringCtx;
+    const size = _ringDisplaySize || 76;
+    const center = size / 2;
+    const radius = center - 4;
 
-    ctx2d.clearRect(0, 0, size, size)
-    ctx2d.beginPath()
-    ctx2d.arc(center, center, radius, 0, Math.PI * 2)
-    ctx2d.strokeStyle = 'rgba(255, 255, 255, 0.2)'
-    ctx2d.lineWidth = 3
-    ctx2d.stroke()
+    ctx2d.clearRect(0, 0, size, size);
+    ctx2d.beginPath();
+    ctx2d.arc(center, center, radius, 0, Math.PI * 2);
+    ctx2d.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    ctx2d.lineWidth = 3;
+    ctx2d.stroke();
 
     if (deg > 0) {
-      const startAngle = -Math.PI / 2
-      const endAngle = startAngle + (deg / 360) * Math.PI * 2
-      ctx2d.beginPath()
-      ctx2d.arc(center, center, radius, startAngle, endAngle)
-      ctx2d.strokeStyle = '#FF0000'
-      ctx2d.lineWidth = 3
-      ctx2d.lineCap = 'round'
-      ctx2d.stroke()
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + (deg / 360) * Math.PI * 2;
+      ctx2d.beginPath();
+      ctx2d.arc(center, center, radius, startAngle, endAngle);
+      ctx2d.strokeStyle = "#FF0000";
+      ctx2d.lineWidth = 3;
+      ctx2d.lineCap = "round";
+      ctx2d.stroke();
     }
   }
 
   function _clearTimers() {
-    if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null }
-    if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null }
+    if (_longPressTimer) {
+      clearTimeout(_longPressTimer);
+      _longPressTimer = null;
+    }
+    if (_progressTimer) {
+      clearInterval(_progressTimer);
+      _progressTimer = null;
+    }
   }
 
   function _composeWatermark(imagePath) {
     uni.getImageInfo({
       src: imagePath,
       success: (info) => {
-        _drawOnCanvas(imagePath, info.width, info.height)
+        _drawOnCanvas(imagePath, info.width, info.height);
       },
       fail: () => {
-        uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}` })
+        uni.navigateTo({
+          url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}`,
+        });
       },
-    })
+    });
   }
 
   function _drawOnCanvas(imagePath, cw, ch) {
-    if (!instance) return
-    const query = uni.createSelectorQuery().in(instance)
-    query.select('#watermarkCanvas')
+    if (!instance) return;
+    const query = uni.createSelectorQuery().in(instance);
+    query
+      .select("#watermarkCanvas")
       .fields({ node: true, size: true })
       .exec((res) => {
         if (!res[0]) {
-          uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}` })
-          return
+          uni.navigateTo({
+            url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}`,
+          });
+          return;
         }
-        const canvas = res[0].node
-        const ctx2d = canvas.getContext('2d')
-        canvas.width = cw
-        canvas.height = ch
+        const canvas = res[0].node;
+        const ctx2d = canvas.getContext("2d");
+        canvas.width = cw;
+        canvas.height = ch;
 
-        const img = canvas.createImage()
-        img.src = imagePath
+        const img = canvas.createImage();
+        img.src = imagePath;
         img.onload = () => {
-          ctx2d.drawImage(img, 0, 0, cw, ch)
+          ctx2d.drawImage(img, 0, 0, cw, ch);
           if (watermarkEnabled.value) {
-            const scale = cw / 750
-            const padLeft = 32 * scale
-            const padBottom = 80 * scale
-            const wmH = _calcWatermarkHeight(scale)
-            ctx2d.save()
-            ctx2d.translate(padLeft, ch - wmH - padBottom)
-            _drawWatermark(ctx2d, scale)
-            ctx2d.restore()
+            const scale = cw / 750;
+            const padLeft = 32 * scale;
+            const padBottom = 80 * scale;
+            const wmH = _calcWatermarkHeight(scale);
+            ctx2d.save();
+            ctx2d.translate(padLeft, ch - wmH - padBottom);
+            _drawWatermark(ctx2d, scale);
+            ctx2d.restore();
           }
           uni.canvasToTempFilePath({
             canvas,
             success: (out) => {
-              uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(out.tempFilePath)}` })
+              uni.navigateTo({
+                url: `/pages/editor/editor?src=${encodeURIComponent(out.tempFilePath)}`,
+              });
             },
             fail: () => {
-              uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}` })
+              uni.navigateTo({
+                url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}`,
+              });
             },
-          })
-        }
+          });
+        };
         img.onerror = () => {
-          uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}` })
-        }
-      })
+          uni.navigateTo({
+            url: `/pages/editor/editor?src=${encodeURIComponent(imagePath)}`,
+          });
+        };
+      });
   }
 
   function _handlePickedMedia(file) {
-    if (file.fileType === 'video') {
-      uni.navigateTo({ url: `/pages/preview/preview?type=video&src=${encodeURIComponent(file.tempFilePath)}` })
+    if (file.fileType === "video") {
+      uni.navigateTo({
+        url: `/pages/preview/preview?type=video&src=${encodeURIComponent(file.tempFilePath)}`,
+      });
     } else {
-      uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(file.tempFilePath)}` })
+      uni.navigateTo({
+        url: `/pages/editor/editor?src=${encodeURIComponent(file.tempFilePath)}`,
+      });
     }
   }
 
   function onShutterStart() {
-    pluginMap.get('capture')?.onShutterStart?.()
+    _longPressTimer = setTimeout(() => _startRecording(), 500);
   }
 
   function onShutterEnd() {
-    pluginMap.get('capture')?.onShutterEnd?.()
+    if (_longPressTimer) {
+      clearTimeout(_longPressTimer);
+      _longPressTimer = null;
+    }
+    if (isRecording.value) {
+      _stopRecording();
+    } else {
+      _takePhoto();
+    }
   }
 
   function onChooseFromAlbum() {
-    pluginMap.get('mediaPicker')?.onChooseFromAlbum?.()
+    uni.chooseMedia({
+      count: 1,
+      mediaType: ["image", "video"],
+      sourceType: ["album"],
+      success: (res) => {
+        _handlePickedMedia(res.tempFiles[0]);
+      },
+    });
   }
 
   function onToggleFlash() {
-    pluginMap.get('capture')?.onToggleFlash?.()
+    const order = ["off", "auto", "on"];
+    const idx = order.indexOf(flash.value);
+    flash.value = order[(idx + 1) % order.length];
   }
 
   function onToggleCamera() {
-    pluginMap.get('capture')?.onToggleCamera?.()
+    devicePosition.value = devicePosition.value === "back" ? "front" : "back";
   }
 
   function onShowWatermarkModal() {
-    showWatermarkModal.value = true
+    showWatermarkModal.value = true;
   }
 
   function onHideWatermarkModal() {
-    showWatermarkModal.value = false
+    showWatermarkModal.value = false;
   }
 
   function onWatermarkInput(e) {
-    _inputValue = e.detail.value
+    _inputValue = e.detail.value;
   }
 
   function onClearWatermark() {
-    _inputValue = ''
-    watermarkText.value = ''
-    showWatermarkModal.value = false
-    _redrawDisplayCanvas()
+    _inputValue = "";
+    watermarkText.value = "";
+    showWatermarkModal.value = false;
+    _redrawDisplayCanvas();
   }
 
   function onConfirmWatermark() {
-    watermarkText.value = _inputValue
-    showWatermarkModal.value = false
-    _redrawDisplayCanvas()
+    watermarkText.value = _inputValue;
+    showWatermarkModal.value = false;
+    _redrawDisplayCanvas();
   }
 
   function onCameraError() {
-    uni.showToast({ title: '相机出错，请检查权限', icon: 'none' })
+    uni.showToast({ title: "相机出错，请检查权限", icon: "none" });
   }
 
   function onToggleWatermark() {
-    watermarkEnabled.value = !watermarkEnabled.value
-    _redrawDisplayCanvas()
+    watermarkEnabled.value = !watermarkEnabled.value;
+    _redrawDisplayCanvas();
   }
 
   function onZoomChange(level) {
-    if (level === currentZoom.value) return
-    currentZoom.value = level
-    if (!ctx) return
+    if (level === currentZoom.value) return;
+    currentZoom.value = level;
+    if (!ctx) return;
     ctx.setZoom({
       zoom: level,
       fail: () => {
-        uni.showToast({ title: '缩放不支持', icon: 'none' })
+        uni.showToast({ title: "缩放不支持", icon: "none" });
       },
-    })
+    });
   }
 
   function onCameraInitDone(e) {
     if (e.detail && e.detail.maxZoom) {
-      maxZoom.value = e.detail.maxZoom
+      maxZoom.value = e.detail.maxZoom;
     }
   }
 
@@ -527,5 +580,5 @@ export function useCamera(options = {}) {
     onToggleWatermark,
     onZoomChange,
     onCameraInitDone,
-  }
+  };
 }
